@@ -7,6 +7,14 @@ const packageMetadata = JSON.parse(
 const lockMetadata = JSON.parse(
   readFileSync(new URL("../package-lock.json", import.meta.url), "utf8"),
 );
+const languageReference = readFileSync(
+  new URL("../docs/LANGUAGE.md", import.meta.url),
+  "utf8",
+);
+const changelog = readFileSync(
+  new URL("../CHANGELOG.md", import.meta.url),
+  "utf8",
+);
 const requestedTag = process.argv[2];
 const metadataOnly = requestedTag === "--metadata-only";
 const tag = metadataOnly ? null : (requestedTag ?? process.env.GITHUB_REF_NAME);
@@ -23,6 +31,20 @@ if (
 ) {
   throw new Error(
     `Version mismatch: package-lock.json must use ${packageMetadata.version} at the document and root-package levels`,
+  );
+}
+if (
+  !languageReference.includes(
+    `This document describes the behavior implemented by FORGE v${packageMetadata.version}.`,
+  )
+) {
+  throw new Error(
+    `Version mismatch: docs/LANGUAGE.md must describe FORGE v${packageMetadata.version}`,
+  );
+}
+if (!changelog.includes(`## [${packageMetadata.version}]`)) {
+  throw new Error(
+    `Missing changelog entry for FORGE v${packageMetadata.version}`,
   );
 }
 if (!metadataOnly && tag !== expectedTag) {

@@ -9,13 +9,16 @@ const EXCLUDED_DIRECTORIES = new Set([
   "node_modules",
 ]);
 
-function stripCode(markdown) {
+function stripCode(markdown, { preserveInlineContent = false } = {}) {
   return markdown
     .replace(
       /(^|\n)( {0,3})(`{3,}|~{3,}).*?\n[\s\S]*?\n\2\3[^\n]*(?=\n|$)/g,
       "\n",
     )
-    .replace(/`[^`\n]*`/g, "");
+    .replace(
+      /`([^`\n]*)`/g,
+      preserveInlineContent ? (_, content) => content : "",
+    );
 }
 
 function stripHtmlTags(value) {
@@ -49,7 +52,7 @@ function githubSlug(heading) {
 function markdownAnchors(markdown) {
   const anchors = new Set();
   const occurrences = new Map();
-  const source = stripCode(markdown);
+  const source = stripCode(markdown, { preserveInlineContent: true });
 
   for (const line of source.split(/\r?\n/)) {
     const match = /^(?: {0,3})#{1,6}\s+(.+?)\s*#*\s*$/.exec(line);
