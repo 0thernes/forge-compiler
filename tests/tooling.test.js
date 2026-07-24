@@ -68,15 +68,40 @@ describe("repository verification tools", () => {
     );
   });
 
-  it("rejects a portable README path that is not a regular file", async () => {
-    const root = await temporaryRoot("forge-artifact-");
-    await mkdir(path.join(root, "assets"));
-    await mkdir(path.join(root, "README.md"));
-    await writeFile(path.join(root, "index.html"), "<!doctype html>");
-    await writeFile(path.join(root, "forge-mark.svg"), "<svg></svg>");
+  it.each([
+    { relativePath: "index.html", expectedType: "file", portable: false },
+    { relativePath: "forge-mark.svg", expectedType: "file", portable: false },
+    { relativePath: "assets", expectedType: "directory", portable: false },
+    { relativePath: "README.md", expectedType: "file", portable: true },
+  ])(
+    "rejects $relativePath when it is not a $expectedType",
+    async ({ relativePath, expectedType, portable }) => {
+      const root = await temporaryRoot("forge-artifact-");
+      const requiredPaths = new Map([
+        ["index.html", "file"],
+        ["forge-mark.svg", "file"],
+        ["assets", "directory"],
+      ]);
+      if (portable) requiredPaths.set("README.md", "file");
+      requiredPaths.set(
+        relativePath,
+        expectedType === "file" ? "directory" : "file",
+      );
 
-    await expect(verifyArtifact(root, { portable: true })).rejects.toThrow(
-      /Artifact verification failed:[\s\S]*required artifact path is not a file: README\.md/,
-    );
-  });
+      for (const [requiredPath, actualType] of requiredPaths) {
+        const target = path.join(root, requiredPath);
+        if (actualType === "directory") {
+          await mkdir(target);
+        } else {
+          await writeFile(target, requiredPath);
+        }
+      }
+
+      await expect(verifyArtifact(root, { portable })).rejects.toThrow(
+        new RegExp(
+          `Artifact verification failed:[\\s\\S]*required artifact path is not a ${expectedType}: ${relativePath.replaceAll(".", "\\.")}`,
+        ),
+      );
+    },
+  );
 });
