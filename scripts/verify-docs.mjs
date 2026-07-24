@@ -18,11 +18,27 @@ function stripCode(markdown) {
     .replace(/`[^`\n]*`/g, "");
 }
 
+function stripHtmlTags(value) {
+  let result = "";
+  let insideTag = false;
+  for (const character of value) {
+    if (character === "<") {
+      insideTag = true;
+    } else if (character === ">") {
+      insideTag = false;
+    } else if (!insideTag) {
+      result += character;
+    }
+  }
+  return result;
+}
+
 function githubSlug(heading) {
-  return heading
-    .replace(/!\[([^\]]*)\]\([^)]*\)/g, "$1")
-    .replace(/\[([^\]]+)\]\([^)]*\)/g, "$1")
-    .replace(/<[^>]+>/g, "")
+  return stripHtmlTags(
+    heading
+      .replace(/!\[([^\]]*)\]\([^)]*\)/g, "$1")
+      .replace(/\[([^\]]+)\]\([^)]*\)/g, "$1"),
+  )
     .replace(/[*_~]/g, "")
     .trim()
     .toLocaleLowerCase("en-US")
