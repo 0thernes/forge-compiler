@@ -7,7 +7,9 @@ const packageMetadata = JSON.parse(
 const lockMetadata = JSON.parse(
   readFileSync(new URL("../package-lock.json", import.meta.url), "utf8"),
 );
-const tag = process.argv[2] ?? process.env.GITHUB_REF_NAME;
+const requestedTag = process.argv[2];
+const metadataOnly = requestedTag === "--metadata-only";
+const tag = metadataOnly ? null : (requestedTag ?? process.env.GITHUB_REF_NAME);
 const expectedTag = `v${packageMetadata.version}`;
 
 if (packageMetadata.version !== FORGE_VERSION) {
@@ -23,8 +25,12 @@ if (
     `Version mismatch: package-lock.json must use ${packageMetadata.version} at the document and root-package levels`,
   );
 }
-if (tag !== expectedTag) {
+if (!metadataOnly && tag !== expectedTag) {
   throw new Error(`Release tag must be ${expectedTag}; received ${tag}`);
 }
 
-console.log(`Release metadata verified for ${expectedTag}`);
+console.log(
+  metadataOnly
+    ? `Project metadata verified for ${expectedTag}`
+    : `Release metadata verified for ${expectedTag}`,
+);

@@ -33,6 +33,13 @@ or memory budget until a limit is reached. Do not expose this educational
 compiler as a multi-tenant execution service without an additional process or
 container boundary, request timeouts, memory quotas, and worker termination.
 
+The production bundle targets ES2022 and expects JavaScript modules, structured
+cloning, and local storage. Module Web Workers are preferred but are not a
+security boundary. If Worker startup or transport fails, the application uses
+the same bounded compiler on the main thread; a costly input can then occupy the
+interface until an applicable limit stops it. Older or embedded browsers
+outside this runtime baseline are not security-tested.
+
 ## Browser data
 
 The editor stores one versioned source draft in the browser's local storage for

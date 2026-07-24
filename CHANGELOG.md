@@ -4,6 +4,47 @@ All notable changes to FORGE are documented here.
 
 ## Unreleased
 
+## [14.0.1] - 2026-07-24
+
+### Added
+
+- Call-frame isolation for complete, re-entrant output records, including empty
+  records and left-to-right argument evaluation and formatting.
+- Local checks for Markdown links, synchronized release metadata, production
+  build contents, and portable archive contents.
+- A portable-release guide that becomes the root `README.md` in static release
+  archives.
+
+### Changed
+
+- The development and release toolchain is pinned to Node.js 24.18.0 LTS and
+  npm 11.18.0.
+- ESLint globals are scoped to browser UI, Worker, Node.js, and test
+  environments instead of being enabled repository-wide.
+- Release verification and packaging run with read-only repository access.
+  Pull requests exercise the packaging and artifact-transfer path; checksummed
+  assets pass through an independent validation job before the separate
+  publishing job receives the minimal `contents: write` permission.
+
+### Fixed
+
+- Nested and re-entrant `print` calls no longer share a partial outer record;
+  each call emits one isolated record after its own arguments finish.
+- Printing and string concatenation honor `maxFormatCharacters`.
+- Trace character accounting includes retained metadata aliases, stack
+  truncation markers, and zero-character budgets.
+- Step-limit diagnostics pass through output quota handling and report
+  truncation status and reasons consistently.
+- Ctrl/Cmd+Enter works repeatedly from any in-app focus target, prevents
+  duplicate browser activation, and focuses the Output tab after a successful
+  run.
+- Retrying the tag workflow updates an existing draft release while continuing
+  to refuse changes to an immutable published release.
+- Release archive verification no longer fails from SIGPIPE during tar/unzip
+  content checks.
+- Unexpected-character diagnostics preserve complete astral Unicode symbols
+  instead of exposing one UTF-16 surrogate.
+
 ## [14.0.0] - 2026-07-23
 
 ### Added
@@ -77,4 +118,5 @@ The original project was a single JSX compiler laboratory with an embedded
 example suite and browser-only self-test. Version 14 preserves that observable
 language behavior while replacing the monolithic delivery model.
 
+[14.0.1]: https://github.com/0thernes/forge-compiler/compare/v14.0.0...v14.0.1
 [14.0.0]: https://github.com/0thernes/forge-compiler/releases/tag/v14.0.0

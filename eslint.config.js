@@ -15,10 +15,6 @@ export default defineConfig([
     ],
     languageOptions: {
       ecmaVersion: "latest",
-      globals: {
-        ...globals.browser,
-        ...globals.node,
-      },
       parserOptions: {
         ecmaFeatures: { jsx: true },
         sourceType: "module",
@@ -26,6 +22,36 @@ export default defineConfig([
     },
     rules: {
       "no-unused-vars": ["error", { argsIgnorePattern: "^_" }],
+    },
+  },
+  {
+    files: ["src/{App,main,useCompilerWorker}.{js,jsx}"],
+    languageOptions: {
+      globals: globals.browser,
+    },
+  },
+  {
+    files: ["src/compiler/compiler.worker.js"],
+    languageOptions: {
+      globals: globals.worker,
+    },
+  },
+  {
+    files: [
+      "*.config.js",
+      "scripts/**/*.{js,mjs,cjs}",
+      "tests/**/*.{js,jsx}",
+      "src/**/*.test.{js,jsx}",
+      "src/test/**/*.{js,jsx}",
+    ],
+    languageOptions: {
+      globals: globals.node,
+    },
+  },
+  {
+    files: ["{src,tests}/**/*.test.jsx"],
+    languageOptions: {
+      globals: globals.browser,
     },
   },
 ]);

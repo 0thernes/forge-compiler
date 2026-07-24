@@ -57,7 +57,9 @@ print(greeting, " says ", values);
 
 ## Run locally
 
-Node.js 24 and npm 11 are the release toolchain.
+Node.js 24.18.0 LTS and npm 11.18.0 are the pinned development and release
+toolchain; the supported Node line is Node.js 24 LTS. The deployed compiler is a
+static browser application and does not require Node.js at runtime.
 
 ```bash
 git clone https://github.com/0thernes/forge-compiler.git
@@ -66,22 +68,36 @@ npm ci
 npm run dev
 ```
 
-| Command                  | Purpose                                        |
-| ------------------------ | ---------------------------------------------- |
-| `npm run dev`            | Start the Vite development server              |
-| `npm test`               | Run the complete Vitest suite once             |
-| `npm run test:coverage`  | Run tests and enforce core coverage thresholds |
-| `npm run lint`           | Run ESLint with zero warnings allowed          |
-| `npm run format:check`   | Check Prettier formatting                      |
-| `npm run build`          | Create the production bundle in `dist/`        |
-| `npm run verify:quality` | Run formatting, lint, and coverage checks      |
-| `npm run verify`         | Run the same quality gate used by CI           |
+The production bundle targets ES2022. A supported browser must provide
+JavaScript modules, ES2022 runtime features, structured cloning, and local
+storage. Module Web Workers are used when available; if Worker construction or
+transport fails, compilation falls back to the main thread. CI exercises the
+interface in jsdom rather than a cross-browser end-to-end matrix, so older and
+embedded browsers outside this baseline are best effort.
 
-Pushes and pull requests run the quality gate with SHA-pinned actions. A
-successful `main` build is the only artifact deployed to Pages. Version tags
-also produce portable archives, a build-dependency CycloneDX SBOM, checksums,
-and a draft GitHub Release. Publication makes the release tag and assets
-immutable.
+| Command                   | Purpose                                                 |
+| ------------------------- | ------------------------------------------------------- |
+| `npm run dev`             | Start the Vite development server                       |
+| `npm test`                | Run the complete Vitest suite once                      |
+| `npm run test:coverage`   | Run tests and enforce core coverage thresholds          |
+| `npm run lint`            | Run environment-specific ESLint checks                  |
+| `npm run format:check`    | Check Prettier formatting                               |
+| `npm run check:docs`      | Validate local Markdown links                           |
+| `npm run verify:metadata` | Check package, lockfile, and compiler version agreement |
+| `npm run build`           | Create the production bundle in `dist/`                 |
+| `npm run check:artifact`  | Validate the existing production bundle                 |
+| `npm run verify:quality`  | Run formatting, lint, docs, metadata, and coverage      |
+| `npm run verify`          | Run the local quality gate, build, and artifact check   |
+
+Pushes to `main` and pull requests targeting `main` run the quality gate and
+dependency audit with SHA-pinned actions; pull requests also receive dependency
+review. A successful `main` build is the only artifact deployed to Pages. Pull
+requests exercise portable release packaging and the read-only artifact
+handoff. Version tags additionally verify release metadata and `main` ancestry,
+then a separate minimal-write job creates or updates the draft GitHub Release.
+The static-site archives include a root README with portable hosting
+instructions, alongside a build-dependency CycloneDX SBOM and checksums.
+Publication makes the release tag and assets immutable.
 
 ## Pipeline
 
@@ -116,6 +132,7 @@ boundary.
 - [Language reference](docs/LANGUAGE.md)
 - [Compiler and VM architecture](docs/ARCHITECTURE.md)
 - [Maintainer release runbook](docs/RELEASING.md)
+- [Using a portable release archive](docs/PORTABLE-RELEASE.md)
 - [Changelog](CHANGELOG.md)
 - [Contributing](CONTRIBUTING.md)
 - [Security and execution model](SECURITY.md)

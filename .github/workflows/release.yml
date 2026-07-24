@@ -4,6 +4,8 @@ on:
   push:
     tags:
       - "v*.*.*"
+  pull_request:
+    branches: [main]
   workflow_dispatch:
     inputs:
       tag:
@@ -13,25 +15,32 @@ on:
 
 permissions: {}
 
+concurrency:
+  group: release-${{ inputs.tag || github.ref_name }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
-  release:
-    name: Verify and draft release
+  verify:
+    name: Verify and package
     runs-on: ubuntu-latest
     timeout-minutes: 20
     permissions:
-      contents: write
-    concurrency:
-      group: release-${{ inputs.tag || github.ref }}
-      cancel-in-progress: false
+      contents: read
     env:
       RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
+    outputs:
+      version: ${{ steps.package.outputs.version }}
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
           persist-credentials: false
-          ref: ${{ inputs.tag || github.ref }}
+          ref: ${{ inputs.tag && format('refs/tags/{0}', inputs.tag) || github.ref }}
+
+      - name: Verify checkout matches release tag
+        if: ${{ github.event_name != 'pull_request' }}
+        run: test "$(git rev-parse HEAD)" = "$(git rev-parse "refs/tags/$RELEASE_TAG^{commit}")"
 
       - name: Setup Node
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
@@ -40,6 +49,14 @@ jobs:
           cache: npm
           cache-dependency-path: package-lock.json
 
+      - name: Activate declared npm
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm_version="$(node -p "require('./package.json').packageManager.replace(/^npm@/, '')")"
+          npm install --global "npm@${npm_version}" --ignore-scripts --no-audit --no-fund
+          test "$(npm --version)" = "${npm_version}"
+
       - name: Install dependencies
         run: npm ci --ignore-scripts --no-audit --no-fund
 
@@ -47,9 +64,11 @@ jobs:
         run: npm audit --audit-level=moderate
 
       - name: Verify tag and version
+        if: ${{ github.event_name != 'pull_request' }}
         run: node scripts/verify-release.mjs "$RELEASE_TAG"
 
       - name: Verify tag commit is on main
+        if: ${{ github.event_name != 'pull_request' }}
         run: git merge-base --is-ancestor HEAD origin/main
 
       - name: Verify release candidate
@@ -64,30 +83,84 @@ jobs:
         id: package
         shell: bash
         run: |
+          set -euo pipefail
           version="$(node -p "require('./package.json').version")"
           archive="forge-compiler-v${version}.tar.gz"
           zipfile="forge-compiler-v${version}.zip"
           sbom="forge-compiler-v${version}.cdx.json"
-          install -m 0644 \
-            CHANGELOG.md CONTRIBUTING.md LICENSE README.md SECURITY.md \
-            dist/
+          install -m 0644 CHANGELOG.md CONTRIBUTING.md LICENSE SECURITY.md dist/
+          install -m 0644 docs/PORTABLE-RELEASE.md dist/README.md
           cp -R docs dist/docs
+          node scripts/verify-artifact.mjs dist --portable
+          node scripts/verify-docs.mjs dist
           tar -czf "${archive}" -C dist .
           (cd dist && zip -q -r "../${zipfile}" .)
           tar -tzf "${archive}" "./LICENSE" >/dev/null
+          tar -tzf "${archive}" "./README.md" >/dev/null
           tar -tzf "${archive}" "./docs/RELEASING.md" >/dev/null
           unzip -tqq "${zipfile}" "LICENSE"
+          unzip -tqq "${zipfile}" "README.md"
           unzip -tqq "${zipfile}" "docs/RELEASING.md"
           npm sbom --sbom-format=cyclonedx > "${sbom}"
           sha256sum "${archive}" "${zipfile}" "${sbom}" > SHA256SUMS
           echo "version=${version}" >> "$GITHUB_OUTPUT"
 
+      - name: Upload verified release assets
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: release-assets
+          path: |
+            forge-compiler-v${{ steps.package.outputs.version }}.tar.gz
+            forge-compiler-v${{ steps.package.outputs.version }}.zip
+            forge-compiler-v${{ steps.package.outputs.version }}.cdx.json
+            SHA256SUMS
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 7
+
+  validate-assets:
+    name: Validate packaged assets
+    needs: verify
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Download verified release assets
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: release-assets
+          path: .
+
+      - name: Verify downloaded checksums
+        run: sha256sum --check SHA256SUMS
+
+  publish:
+    name: Create or update draft release
+    if: ${{ github.event_name != 'pull_request' }}
+    needs: [verify, validate-assets]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    env:
+      GH_REPO: ${{ github.repository }}
+      RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
+      VERSION: ${{ needs.verify.outputs.version }}
+    steps:
+      - name: Download verified release assets
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: release-assets
+          path: .
+
+      - name: Verify downloaded checksums
+        run: sha256sum --check SHA256SUMS
+
       - name: Create or update draft release
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
-          VERSION: ${{ steps.package.outputs.version }}
         run: |
+          set -euo pipefail
           assets=(
             "forge-compiler-v${VERSION}.tar.gz"
             "forge-compiler-v${VERSION}.zip"
