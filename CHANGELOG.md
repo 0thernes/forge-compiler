@@ -8,7 +8,7 @@ All notable changes to FORGE are documented here.
 
 ### Added
 
-- A backend-independent AST tree-walk interpreter and 91-case differential
+- A backend-independent AST tree-walk interpreter and 92-case differential
   corpus covering canonical examples, conformance cases, focused backend
   regressions, shared-front-end failures, and explicit resource-policy
   behavior.
@@ -33,6 +33,9 @@ All notable changes to FORGE are documented here.
   to `maxStringLength`; presentation formatting remains independently bounded.
 - The local and CI quality gate now verifies that the backend-independent
   differential corpus detects four seeded compiler defects.
+- Differential execution applies the reference interpreter's conservative
+  256-frame operational cap to both engines while production keeps its
+  iterative 50,000-frame default.
 
 ### Fixed
 

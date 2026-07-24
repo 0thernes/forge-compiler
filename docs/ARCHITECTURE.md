@@ -171,7 +171,7 @@ Vitest exercises:
   adapters;
 - v14 correctness and adversarial regressions;
 - compiler stage contracts, limits, and trace behavior;
-- 91 differential cases comparing VM output and cycle-safe final globals with
+- 92 differential cases comparing VM output and cycle-safe final globals with
   an independent tree-walk execution backend;
 - accessible React interactions.
 
@@ -182,7 +182,11 @@ baseline, four targeted mutation killers, a production build, and its expected
 artifact contents. The differential interpreter independently implements
 environments, control flow, built-ins, coercion, and formatting while
 intentionally sharing the lexer, parser, and semantic analyzer. Shared-front-end
-and resource-policy cases are tagged so their scope is not overstated.
+and resource-policy cases are tagged so their scope is not overstated. Because
+the tree-walk oracle intentionally uses host recursion, the differential harness
+applies its conservative 256-frame operational cap to both engines and rejects
+higher corpus overrides. The iterative production VM retains its 50,000-frame
+default and separate 20,000-call host-stack regression.
 
 One CI workflow runs that gate plus the dependency audit on every main-branch
 push and pull request. Only the verified `main` artifact can flow to the

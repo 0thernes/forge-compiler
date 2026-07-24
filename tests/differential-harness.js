@@ -1,4 +1,7 @@
-import { runReference } from "./reference-interpreter.js";
+import {
+  REFERENCE_CALL_DEPTH_CAP,
+  runReference,
+} from "./reference-interpreter.js";
 import { DIFFERENTIAL_CASES } from "./differential-corpus.js";
 
 function capture(runner, source, options) {
@@ -53,7 +56,16 @@ export function compareDifferentialCase(
   vmRunner,
   referenceRunner = runReference,
 ) {
-  const options = testCase.limits ? { limits: testCase.limits } : undefined;
+  const limits = {
+    maxCallDepth: REFERENCE_CALL_DEPTH_CAP,
+    ...testCase.limits,
+  };
+  if (limits.maxCallDepth > REFERENCE_CALL_DEPTH_CAP) {
+    throw new Error(
+      `Differential case ${JSON.stringify(testCase.name)} requests maxCallDepth ${limits.maxCallDepth}, above the ${REFERENCE_CALL_DEPTH_CAP}-frame reference-interpreter cap`,
+    );
+  }
+  const options = { limits };
   const vm = capture(vmRunner, testCase.source, options);
   const reference = capture(referenceRunner, testCase.source, options);
 

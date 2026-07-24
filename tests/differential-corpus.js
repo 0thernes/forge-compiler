@@ -182,6 +182,16 @@ print(identity(1), identity(2));`,
     expectedOutput: "12",
   },
   {
+    name: "differential call depth stops before host stack exhaustion",
+    kind: "resource-policy",
+    source: `fn recurse(value) {
+  if (value == 0) { return 0; }
+  return recurse(value - 1);
+}
+print(recurse(300));`,
+    errorIncludes: "Call depth exceeds the 256 frame limit",
+  },
+  {
     name: "modulo by zero has error parity",
     source: `print(8 % 0);`,
     errorIncludes: "Modulo by zero",
