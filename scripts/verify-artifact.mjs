@@ -96,14 +96,29 @@ export async function verifyArtifact(root = "dist", { portable = false } = {}) {
     throw new Error(`Artifact root is not a directory: ${rootDirectory}`);
   }
 
-  const required = ["index.html", "forge-mark.svg", "assets"];
-  if (portable) required.push(...PORTABLE_FILES);
+  const required = new Map([
+    ["index.html", "file"],
+    ["forge-mark.svg", "file"],
+    ["assets", "directory"],
+  ]);
+  if (portable) {
+    for (const file of PORTABLE_FILES) required.set(file, "file");
+  }
   const failures = [];
 
-  for (const relativePath of required) {
+  for (const [relativePath, expectedType] of required) {
     const target = path.join(rootDirectory, relativePath);
     const info = await fileInfo(target);
-    if (!info) failures.push(`missing required artifact path: ${relativePath}`);
+    if (!info) {
+      failures.push(`missing required artifact path: ${relativePath}`);
+    } else if (
+      (expectedType === "file" && !info.isFile()) ||
+      (expectedType === "directory" && !info.isDirectory())
+    ) {
+      failures.push(
+        `required artifact path is not a ${expectedType}: ${relativePath}`,
+      );
+    }
   }
 
   const files = await filesBelow(rootDirectory);

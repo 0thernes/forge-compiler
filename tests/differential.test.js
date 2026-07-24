@@ -6,7 +6,9 @@ import { compareDifferentialCase } from "./differential-harness.js";
 describe("differential VM and tree-walk reference interpreter", () => {
   it.each(DIFFERENTIAL_CASES)("$name", (testCase) => {
     expect(
-      compareDifferentialCase(testCase, (source) => runSource(source)),
+      compareDifferentialCase(testCase, (source, options) =>
+        runSource(source, options),
+      ),
     ).toBeNull();
   });
 });

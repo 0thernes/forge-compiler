@@ -215,13 +215,18 @@ function evaluateBinary(operation, left, right) {
   }
 }
 
-export function runReference(source, { maxNodes = 5_000_000 } = {}) {
+export function runReference(
+  source,
+  { maxNodes = 5_000_000, limits = {} } = {},
+) {
   const ast = parse(lex(source));
   analyze(ast);
 
   const output = [];
   const globalEnvironment = createEnvironment();
   let remainingNodes = maxNodes;
+  let activeCallDepth = 0;
+  const maxCallDepth = limits.maxCallDepth ?? 50_000;
 
   function tick() {
     remainingNodes -= 1;
@@ -345,18 +350,28 @@ export function runReference(source, { maxNodes = 5_000_000 } = {}) {
         `Expected ${declaration.params.length} argument(s) but got ${arguments_.length}`,
       );
     }
+    if (activeCallDepth >= maxCallDepth) {
+      const error = new Error(
+        `Call depth exceeds the ${maxCallDepth} frame limit (VM_CALL_DEPTH_LIMIT)`,
+      );
+      error.code = "VM_CALL_DEPTH_LIMIT";
+      throw error;
+    }
 
     const callEnvironment = createEnvironment(environment);
     declaration.params.forEach((parameter, index) => {
       callEnvironment.variables.set(parameter, arguments_[index]);
     });
 
+    activeCallDepth += 1;
     try {
       executeStatements(declaration.body.body, callEnvironment);
       return 0;
     } catch (signal) {
       if (signal instanceof ReturnSignal) return signal.value;
       throw signal;
+    } finally {
+      activeCallDepth -= 1;
     }
   }
 

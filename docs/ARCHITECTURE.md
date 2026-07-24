@@ -171,7 +171,7 @@ Vitest exercises:
   adapters;
 - v14 correctness and adversarial regressions;
 - compiler stage contracts, limits, and trace behavior;
-- 89 differential cases comparing VM output and cycle-safe final globals with
+- 91 differential cases comparing VM output and cycle-safe final globals with
   an independent tree-walk execution backend;
 - accessible React interactions.
 
