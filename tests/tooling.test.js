@@ -2,6 +2,7 @@ import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
+import { renderPortableReadme } from "../scripts/prepare-portable-readme.mjs";
 import { verifyArtifact } from "../scripts/verify-artifact.mjs";
 import { verifyDocs } from "../scripts/verify-docs.mjs";
 
@@ -25,6 +26,20 @@ async function temporaryRoot(prefix) {
 }
 
 describe("repository verification tools", () => {
+  it("relocates portable guide links for the archive root", () => {
+    const readme = renderPortableReadme(
+      [
+        "[Security](../SECURITY.md)",
+        "[Language](LANGUAGE.md)",
+        "[Architecture](ARCHITECTURE.md)",
+      ].join("\n"),
+    );
+
+    expect(readme).toContain("[Security](SECURITY.md)");
+    expect(readme).toContain("[Language](docs/LANGUAGE.md)");
+    expect(readme).toContain("[Architecture](docs/ARCHITECTURE.md)");
+  });
+
   it("preserves inline-code text when validating heading anchors", async () => {
     const root = await temporaryRoot("forge-docs-");
     await writeFile(
