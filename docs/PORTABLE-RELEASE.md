@@ -44,10 +44,11 @@ when available and falls back to main-thread compilation if Worker startup or
 transport fails.
 
 FORGE source executes as data inside the project's bounded virtual machine. The
-application stores one versioned source draft in local storage for its origin
-and does not upload source or output. This is an educational runtime, not a
-formal hostile-code sandbox; see the
-[security policy](https://github.com/0thernes/forge-compiler/blob/main/SECURITY.md)
+application stores one versioned source draft and the selected console
+appearance in local storage for its origin. It does not upload those
+preferences, source, or output. This is an educational runtime, not a formal
+hostile-code sandbox; see the
+[security policy](../SECURITY.md)
 for the trust model and deployment guidance.
 
 ## Verify and learn more
@@ -67,6 +68,6 @@ Get-FileHash .\forge-compiler-v*.zip -Algorithm SHA256
 
 - [Live compiler](https://0thernes.github.io/forge-compiler/)
 - [Source repository](https://github.com/0thernes/forge-compiler)
-- [Language reference](https://github.com/0thernes/forge-compiler/blob/main/docs/LANGUAGE.md)
-- [Compiler architecture](https://github.com/0thernes/forge-compiler/blob/main/docs/ARCHITECTURE.md)
+- [Language reference](LANGUAGE.md)
+- [Compiler architecture](ARCHITECTURE.md)
 - [Issues](https://github.com/0thernes/forge-compiler/issues)

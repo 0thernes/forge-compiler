@@ -1,6 +1,6 @@
 # FORGE language reference
 
-This document describes the behavior implemented by FORGE v14.0.1.
+This document describes the behavior implemented by FORGE v14.1.0.
 
 ## Lexical rules
 
@@ -145,8 +145,13 @@ From highest to lowest precedence:
 
 Arithmetic and ordered comparisons require finite numbers. Division or modulo
 by zero and numeric overflow are runtime errors. `+` adds two numbers; if
-either operand is a string it concatenates their printable forms. Equality is
-strict and does not coerce between strings and numbers.
+either operand is a string it concatenates complete string forms. Strings are
+used unchanged. Numbers use their normal decimal form, while arrays use the
+same quoted-string and bracket syntax seen in output. Concatenation is bounded
+by `maxStringLength`, not the display-format character or item limits. A cyclic
+array or one nested beyond `maxFormatDepth` cannot be converted and raises an
+execution error. Equality is strict and does not coerce between strings and
+numbers.
 
 Both variables and array elements support `=`, `+=`, `-=`, `*=`, `/=`, and
 `%=`. Compound index assignment evaluates its target and index once.
@@ -175,7 +180,10 @@ record completes first; the outer record resumes afterward without sharing or
 corrupting the nested record. Formatting an earlier mutable array therefore
 captures its value before a later argument can mutate it. `print();` emits an
 empty record. Strings print without quotes; strings inside arrays are quoted and
-escaped. Cyclic arrays are represented safely.
+escaped. Cyclic arrays are represented safely. Output presentation uses the
+formatting depth, item, and character limits below, so a displayed value may
+contain an ellipsis even though program-visible string concatenation never
+silently creates one.
 
 ## Compiler API
 
@@ -227,16 +235,17 @@ Limits can be overridden through `compileSource(source, { limits })`.
 | Trace characters                | 1,000,000 |
 | Characters per traced string    |       512 |
 | Formatting depth                |        32 |
-| Formatted items                 |     1,000 |
-| Formatted characters            |    20,000 |
+| Display-formatted items         |     1,000 |
+| Display-formatted characters    |    20,000 |
 
 Normal completion has status `halted`. Exhausting the step budget has status
 `step_limit`. When the output quota permits, the output retains the historical
 `[EXECUTION LIMIT REACHED]` marker for v13 compatibility; otherwise the normal
 output truncation marker and flags replace it while the status remains
 `step_limit`. Output and trace limits set explicit `outputTruncated` and
-`traceOverflow` flags on the result. Formatted values and retained trace strings
-are hard-capped.
+`traceOverflow` flags on the result. Display-formatted values and retained trace
+strings are hard-capped. String concatenation instead produces a complete value
+within `maxStringLength` or fails explicitly.
 `maxOutputCharacters` and `maxOutputLines` cap program-produced output and its
 record separators. Fixed truncation markers may exceed those numeric budgets;
 they are bounded diagnostic metadata signaled by the result status and flags.

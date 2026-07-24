@@ -42,8 +42,8 @@ outside this runtime baseline are not security-tested.
 
 ## Browser data
 
-The editor stores one versioned source draft in the browser's local storage for
-the deployed origin. FORGE does not upload that draft or program output, but
-anyone with access to the same browser profile can read it through the site.
-Avoid entering secrets and clear the site's stored data when using a shared
-device.
+The editor stores one versioned source draft and the selected console appearance
+in the browser's local storage for the deployed origin. FORGE does not upload
+those preferences, source, or program output, but anyone with access to the same
+browser profile can read the stored draft through the site. Avoid entering
+secrets and clear the site's stored data when using a shared device.

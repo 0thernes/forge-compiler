@@ -6,8 +6,9 @@ draft before publication.
 ## Prepare
 
 1. Start from a clean `main` branch that matches `origin/main`.
-2. Update the version in `package.json`, `package-lock.json`, and
-   `src/compiler/constants.js`, then finalize the matching changelog entry.
+2. Update the version in `package.json`, `package-lock.json`,
+   `src/compiler/constants.js`, and `docs/LANGUAGE.md`, then finalize the
+   matching changelog entry.
 3. Derive the tag from the package version. The commands below assume the same
    shell session; repeat these two assignments after opening a new shell:
 

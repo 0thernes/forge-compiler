@@ -17,8 +17,9 @@ Before opening a pull request, run:
 npm run verify
 ```
 
-This checks formatting, lint, core coverage thresholds, all compatibility and
-UI tests, and the production build.
+This checks formatting, lint, documentation and release metadata, core coverage
+thresholds, all compatibility and UI tests, the differential corpus and
+mutation-sensitivity gate, and the production build.
 
 ## Compiler changes
 
