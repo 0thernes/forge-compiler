@@ -475,6 +475,16 @@ kbd {
   tab-size: 2;
 }
 
+.editor-panel textarea:focus-visible,
+.workspace:focus-visible,
+.code-block:focus-visible,
+.assembly-list:focus-visible,
+.terminal-card pre:focus-visible,
+.table-scroll:focus-visible {
+  outline: 2px solid var(--cyan);
+  outline-offset: -3px;
+}
+
 .editor-panel textarea::selection {
   background: rgb(112 215 231 / 24%);
 }

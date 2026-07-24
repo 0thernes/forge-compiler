@@ -123,10 +123,11 @@ because its assembly inspector does not need that duplicate payload.
 
 The interface associates each result with its source revision, ignores obsolete
 in-flight completions, and clears previous artifacts after a current-source
-failure. Worker startup, cloning, and transport failures reject pending work
-and fall back cleanly. A versioned source draft is stored locally. Token,
-assembly, AST, output, global, and trace inspectors cap rendered content while
-compilation still uses the complete program.
+failure. Worker startup failure falls back immediately. A later cloning or
+transport failure rejects pending work, terminates the worker, and routes
+subsequent requests through the fallback. A versioned source draft is stored
+locally. Token, assembly, AST, output, global, and trace inspectors cap rendered
+content while compilation still uses the complete program.
 
 ## Verification and delivery
 
@@ -144,5 +145,6 @@ the verified `main` artifact can flow to the serialized Pages deployment job.
 A tag workflow verifies package/compiler versions and confirms that the tag
 commit belongs to `main`, builds a portable bundle, generates a CycloneDX SBOM
 for the build dependency graph plus checksums, and creates a draft release.
-Published release assets are never silently replaced. Dependabot covers both
-npm and GitHub Actions dependencies.
+Published release assets are never silently replaced; repository release
+immutability locks both the tag and assets at publication. Dependabot covers
+both npm and GitHub Actions dependencies.

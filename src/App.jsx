@@ -527,6 +527,7 @@ export default function ForgeCompiler() {
         id={`panel-${activeTab}`}
         role="tabpanel"
         aria-labelledby={`tab-${activeTab}`}
+        tabIndex={0}
       >
         {activeTab === "source" && (
           <div className="editor-panel">
@@ -633,7 +634,12 @@ export default function ForgeCompiler() {
                   skipped
                 />
               ) : (
-                <pre className="code-block code-block--cyan">
+                <pre
+                  className="code-block code-block--cyan"
+                  role="region"
+                  aria-label="Abstract syntax tree"
+                  tabIndex={0}
+                >
                   {renderAst(compilation.ast)}
                 </pre>
               )}
@@ -661,6 +667,7 @@ export default function ForgeCompiler() {
                 className="assembly-list"
                 role="table"
                 aria-label="Generated assembly"
+                tabIndex={0}
               >
                 <div className="sr-only" role="rowgroup">
                   <div role="row">
@@ -747,7 +754,9 @@ export default function ForgeCompiler() {
                   </span>
                   forge://stdout
                 </div>
-                <pre>{visibleOutput}</pre>
+                <pre role="region" aria-label="Program output" tabIndex={0}>
+                  {visibleOutput}
+                </pre>
               </div>
               {outputDisplayCapped && (
                 <InspectorLimit
@@ -800,7 +809,12 @@ export default function ForgeCompiler() {
                     : "complete trace"}
                 </span>
               </div>
-              <div className="table-scroll">
+              <div
+                className="table-scroll"
+                role="region"
+                aria-label="Execution trace"
+                tabIndex={0}
+              >
                 <table>
                   <thead>
                     <tr>

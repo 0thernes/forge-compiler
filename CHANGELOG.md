@@ -22,6 +22,7 @@ All notable changes to FORGE are documented here.
 - SHA-pinned CI/Pages delivery with a single verified build artifact.
 - Tag-driven release archives, build-dependency CycloneDX SBOM generation, and
   checksums.
+- Immutable published releases with GitHub-generated attestations.
 - Language, architecture, security, and contribution documentation.
 
 ### Fixed
