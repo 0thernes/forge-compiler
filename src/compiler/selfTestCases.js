@@ -259,6 +259,121 @@ export const SELF_TEST_CASES = Object.freeze([
     expectedOutput: "2",
   },
   {
+    name: "comparison type errors name the surface operator",
+    source: `print(1 < "2");`,
+    errorIncludes: "'<' requires numbers",
+  },
+  {
+    name: "char_at returns the code unit at a valid index",
+    source: `print(char_at("hi", 1));`,
+    expectedOutput: "i",
+  },
+  {
+    name: "char_at rejects an out-of-bounds index",
+    source: `print(char_at("hi", 2));`,
+    errorIncludes: "Index out of bounds",
+  },
+  {
+    name: "runtime arithmetic overflow is rejected",
+    source: `let x = 999999999; let i = 0; while (i < 12) { x = x * x; i += 1; }`,
+    errorIncludes: "Numeric overflow during '*'",
+  },
+  {
+    name: "control characters are escaped inside formatted arrays",
+    source: `print(["a\\nb", "c\\td", "e\\rf", "g\\0h"]);`,
+    expectedOutput: `["a\\nb", "c\\td", "e\\rf", "g\\0h"]`,
+  },
+  {
+    name: "'+' rejects two arrays",
+    source: `let x = [1] + [2];`,
+    errorIncludes: "requires numbers or strings",
+  },
+  {
+    name: "len rejects numbers",
+    source: `len(5);`,
+    errorIncludes: "len() requires string or array",
+  },
+  {
+    name: "string reads are bounds-checked",
+    source: `let s = "ab"; print(s[5]);`,
+    errorIncludes: "string length 2",
+  },
+  {
+    name: "indexing a number fails",
+    source: `let n = 5; print(n[0]);`,
+    errorIncludes: "cannot index number",
+  },
+  {
+    name: "index-assigning a number fails",
+    source: `let n = 5; n[0] = 1;`,
+    errorIncludes: "cannot index-assign",
+  },
+  {
+    name: "substr rejects a negative count",
+    source: `print(substr("abc", 0, -1));`,
+    errorIncludes: "substr count must be non-negative",
+  },
+  {
+    name: "push requires an array",
+    source: `push(1, 2);`,
+    errorIncludes: "push() requires array",
+  },
+  {
+    name: "pop requires an array",
+    source: `pop(5);`,
+    errorIncludes: "pop() requires array",
+  },
+  {
+    name: "function bodies may read variables declared later in the block",
+    source: `fn f() { return x; } let x = 5; print(f());`,
+    expectedOutput: "5",
+  },
+  {
+    name: "nested functions may read later declarations in enclosing scopes",
+    source: `fn outer() { fn inner() { return y; } return inner(); } let y = 9; print(outer());`,
+    expectedOutput: "9",
+  },
+  {
+    name: "function bodies may assign variables declared later in the block",
+    source: `fn bump() { total += 1; return total; } let total = 10; print(bump());`,
+    expectedOutput: "11",
+  },
+  {
+    name: "calling before the captured declaration runs still fails at runtime",
+    source: `fn f() { return x; } print(f()); let x = 5;`,
+    errorIncludes: "Undefined variable: x",
+  },
+  {
+    name: "a parenthesized identifier remains callable",
+    source: `fn f(n) { return n + 1; } print((f)(1));`,
+    expectedOutput: "2",
+  },
+  {
+    name: "unexpected astral characters keep their full code point in diagnostics",
+    source: `let 𝑥 = 1;`,
+    errorIncludes: "Unexpected char '𝑥'",
+  },
+  {
+    name: "string concatenation is lossless up to the string limit",
+    source: `let s = "aaaaaaaaaa"; let i = 0; while (i < 12) { s = s + s; i += 1; } print(len(s + "!"));`,
+    expectedOutput: "40961",
+  },
+  {
+    name: "array concatenation renders every element",
+    source: `let a = []; let i = 0; while (i < 1200) { push(a, 1); i += 1; } print(len("" + a));`,
+    expectedOutput: "3600",
+  },
+  {
+    name: "concatenating a self-referential array fails loudly",
+    source: `let a = [1]; push(a, a); let s = "" + a;`,
+    errorIncludes: "contains itself",
+  },
+  {
+    name: "concatenating an over-deep array fails loudly",
+    source: `let a = []; let i = 0; while (i < 40) { a = [a]; i += 1; } let s = "" + a;`,
+    errorIncludes: "nested deeper",
+  },
+  {
     name: "numeric overflow is rejected",
     source: `print(9999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999);`,
     errorIncludes: "outside the finite number range",

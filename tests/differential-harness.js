@@ -1,9 +1,17 @@
-import { runReference } from "./reference-interpreter.js";
+import { interpretSource } from "../src/compiler/interpreter.js";
 import { DIFFERENTIAL_CASES } from "./differential-corpus.js";
 
-function capture(runner, source) {
+// Oracle boundary: the reference interpreter takes (source, options) where
+// options may carry { limits } overrides, and returns the same result shape
+// as the VM ({ status, output, globals, ... }). Runners passed to
+// compareDifferentialCase must accept the same (source, options) pair.
+function runReference(source, options) {
+  return interpretSource(source, options ?? {});
+}
+
+function capture(runner, source, options) {
   try {
-    return { result: runner(source), error: null };
+    return { result: runner(source, options), error: null };
   } catch (error) {
     return { result: null, error };
   }
@@ -53,8 +61,8 @@ export function compareDifferentialCase(
   vmRunner,
   referenceRunner = runReference,
 ) {
-  const vm = capture(vmRunner, testCase.source);
-  const reference = capture(referenceRunner, testCase.source);
+  const vm = capture(vmRunner, testCase.source, testCase.options);
+  const reference = capture(referenceRunner, testCase.source, testCase.options);
 
   if (testCase.errorIncludes) {
     if (!vm.error || !reference.error) {
@@ -84,14 +92,39 @@ export function compareDifferentialCase(
   if (JSON.stringify(vmOutput) !== JSON.stringify(referenceOutput)) {
     return `output mismatch; VM=${JSON.stringify(vmOutput)}, reference=${JSON.stringify(referenceOutput)}`;
   }
+  const vmStatus = vm.result?.status;
+  const referenceStatus = reference.result?.status;
+  if (vmStatus !== referenceStatus) {
+    return `status mismatch; VM=${vmStatus}, reference=${referenceStatus}`;
+  }
+  if (
+    testCase.expectedStatus !== undefined &&
+    vmStatus !== testCase.expectedStatus
+  ) {
+    return `status mismatch; expected=${testCase.expectedStatus}, actual=${vmStatus}`;
+  }
   if (
     testCase.expectedOutput !== undefined &&
     vmOutput.join("\n") !== testCase.expectedOutput
   ) {
     return `both engines disagreed with the golden output; expected=${JSON.stringify(testCase.expectedOutput)}, actual=${JSON.stringify(vmOutput.join("\n"))}`;
   }
-  if (!globalsMatch(vm.result?.globals, reference.result?.globals)) {
+  // A step-limit cut lands at an arbitrary point inside the loop for each
+  // engine (VM steps and interpreter node visits are not comparable), so
+  // partially-mutated globals are only comparable for halted programs.
+  if (
+    vmStatus !== "step_limit" &&
+    !globalsMatch(vm.result?.globals, reference.result?.globals)
+  ) {
     return "final globals differ in names, values, aliases, or cycles";
+  }
+  if (typeof testCase.validate === "function") {
+    if (!testCase.validate(vm.result)) {
+      return "VM result failed the case validator";
+    }
+    if (!testCase.validate(reference.result)) {
+      return "reference result failed the case validator";
+    }
   }
   return null;
 }

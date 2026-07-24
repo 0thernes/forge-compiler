@@ -59,4 +59,24 @@ describe("compiler worker message contract", () => {
       },
     });
   });
+
+  it("returns a structured-cloneable self-test report for verify requests", () => {
+    const response = handleCompilerRequest({
+      id: 10,
+      type: "verify",
+      payload: {},
+    });
+    const transferred = structuredClone(response);
+
+    expect(transferred).toMatchObject({
+      id: 10,
+      ok: true,
+      value: {
+        ok: true,
+        failures: [],
+      },
+    });
+    expect(transferred.value.exampleCount).toBeGreaterThan(0);
+    expect(transferred.value.assertionCount).toBeGreaterThan(0);
+  });
 });

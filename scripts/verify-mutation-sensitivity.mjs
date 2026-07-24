@@ -44,11 +44,33 @@ const mutations = [
           generateExpression(node.right);`,
     expectedCases: ["short-circuiting skips the right-hand side"],
   },
+  {
+    name: "scope entry is disabled (ENTER_SCOPE nop)",
+    file: "vm.js",
+    find: `case "ENTER_SCOPE":
+        currentScope = createScope(currentScope);`,
+    replacement: `case "ENTER_SCOPE":`,
+    expectedCases: [
+      "self-test · nested blocks can shadow variables",
+      "same-name functions stay isolated in sibling blocks",
+      "v13 corpus · shadowing: inner let does not leak",
+    ],
+  },
+  {
+    name: "lexical capture is corrupted (BIND_FUNCTION captures root scope)",
+    file: "vm.js",
+    find: "environment: currentScope,",
+    replacement: "environment: rootScope,",
+    expectedCases: [
+      "self-test · nested functions capture and update outer variables",
+      "nested functions update their declaration environment",
+    ],
+  },
 ];
 
 let failed = false;
-const baselineMismatches = findDifferentialMismatches((source) =>
-  runSource(source),
+const baselineMismatches = findDifferentialMismatches((source, options) =>
+  runSource(source, options),
 );
 if (baselineMismatches.length > 0) {
   console.error(
@@ -97,8 +119,8 @@ try {
     const mutant = await import(
       `${pathToFileURL(join(mutantCompiler, "index.js")).href}?mutation=${index}`
     );
-    const mismatches = findDifferentialMismatches((source) =>
-      mutant.runSource(source),
+    const mismatches = findDifferentialMismatches((source, options) =>
+      mutant.runSource(source, options),
     );
     const mismatchNames = new Set(mismatches.map((mismatch) => mismatch.name));
     const missingExpectedCases = mutation.expectedCases.filter(

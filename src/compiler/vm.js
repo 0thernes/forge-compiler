@@ -836,7 +836,8 @@ function runLinkedCode(code, limits) {
       case "GTE": {
         const right = pop(instruction.opcode);
         const left = pop(instruction.opcode);
-        requireNumbers(left, right, instruction.opcode);
+        const comparisonOperators = { LT: "<", GT: ">", LTE: "<=", GTE: ">=" };
+        requireNumbers(left, right, comparisonOperators[instruction.opcode]);
         const comparisons = {
           LT: left < right,
           GT: left > right,
