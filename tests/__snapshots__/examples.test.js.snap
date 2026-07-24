@@ -1,0 +1,190 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`bundled examples > Arrays runs clean and matches golden output 1`] = `
+"a = [10, 20, 30]
+a[0] = 10  a[2] = 30
+len(a) = 3
+after a[1]=99: [10, 99, 30]
+after a[1]+=1: [10, 100, 30]
+push(a, 40) → length 4: [10, 100, 30, 40]
+pop(a) → 40: [10, 100, 30]
+push(b, 777) → a is [10, 100, 30, 777]
+s[0] = F  s[4] = E"
+`;
+
+exports[`bundled examples > Binary Search runs clean and matches golden output 1`] = `
+"array: [2, 5, 8, 12, 16, 23, 38, 56, 72, 91]
+find 23 → index 5
+find 2  → index 0
+find 91 → index 9
+find 40 → index -1"
+`;
+
+exports[`bundled examples > Bubble Sort runs clean and matches golden output 1`] = `
+"unsorted: [64, 25, 12, 90, 11, 42, 7, 38]
+sorted:   [7, 11, 12, 25, 38, 42, 64, 90]"
+`;
+
+exports[`bundled examples > Closures runs clean and matches golden output 1`] = `"bounce(0, 10) = 0"`;
+
+exports[`bundled examples > Collatz runs clean and matches golden output 1`] = `
+"collatz(1) = 0 steps
+collatz(2) = 1 steps
+collatz(3) = 7 steps
+collatz(4) = 2 steps
+collatz(5) = 5 steps
+collatz(6) = 8 steps
+collatz(7) = 16 steps
+collatz(8) = 3 steps
+collatz(9) = 19 steps
+collatz(10) = 6 steps
+collatz(11) = 14 steps
+collatz(12) = 9 steps
+collatz(13) = 9 steps
+collatz(14) = 17 steps
+collatz(15) = 17 steps
+collatz(16) = 4 steps
+collatz(17) = 12 steps
+collatz(18) = 20 steps
+collatz(19) = 20 steps
+collatz(20) = 7 steps"
+`;
+
+exports[`bundled examples > Escapes runs clean and matches golden output 1`] = `
+"line1
+line2
+tab:	here
+quote: "hi""
+`;
+
+exports[`bundled examples > Fibonacci runs clean and matches golden output 1`] = `
+"fib(0) = 0
+fib(1) = 1
+fib(2) = 1
+fib(3) = 2
+fib(4) = 3
+fib(5) = 5
+fib(6) = 8
+fib(7) = 13
+fib(8) = 21
+fib(9) = 34
+fib(10) = 55
+fib(11) = 89
+fib(12) = 144
+fib(13) = 233
+fib(14) = 377"
+`;
+
+exports[`bundled examples > FizzBuzz runs clean and matches golden output 1`] = `
+"1
+2
+Fizz
+4
+Buzz
+Fizz
+7
+8
+Fizz
+Buzz
+11
+Fizz
+13
+14
+FizzBuzz
+16
+17
+Fizz
+19
+Buzz
+Fizz
+22
+23
+Fizz
+Buzz
+26
+Fizz
+28
+29
+FizzBuzz"
+`;
+
+exports[`bundled examples > GCD + LCM runs clean and matches golden output 1`] = `
+"gcd(48, 18) = 6
+gcd(100, 75) = 25
+lcm(12, 8) = 24
+lcm(7, 5) = 35"
+`;
+
+exports[`bundled examples > Hello World runs clean and matches golden output 1`] = `"Hello, World!"`;
+
+exports[`bundled examples > Palindrome runs clean and matches golden output 1`] = `
+"racecar: 1
+madam: 1
+hello: 0
+civic: 1
+forge: 0
+a: 1"
+`;
+
+exports[`bundled examples > Primes runs clean and matches golden output 1`] = `
+"2
+3
+5
+7
+11
+13
+17
+19
+23
+29
+31
+37
+41
+43
+47
+15 primes found"
+`;
+
+exports[`bundled examples > Sieve runs clean and matches golden output 1`] = `
+"25 primes up to 100:
+[2, 3, 5, 7, 11, 13, 17, 19, 23, 29, 31, 37, 41, 43, 47, 53, 59, 61, 67, 71, 73, 79, 83, 89, 97]"
+`;
+
+exports[`bundled examples > String Reverse runs clean and matches golden output 1`] = `
+"!dlroW ,olleH
+EGROF
+racecar"
+`;
+
+exports[`bundled examples > Tower of Hanoi runs clean and matches golden output 1`] = `
+"Move disk 1: A → B
+Move disk 2: A → C
+Move disk 1: B → C
+Move disk 3: A → B
+Move disk 1: C → A
+Move disk 2: C → B
+Move disk 1: A → B
+Move disk 4: A → C
+Move disk 1: B → C
+Move disk 2: B → A
+Move disk 1: C → A
+Move disk 3: B → C
+Move disk 1: A → B
+Move disk 2: A → C
+Move disk 1: B → C"
+`;
+
+exports[`bundled examples > Type Safety runs clean and matches golden output 1`] = `
+"type_of(42) = number
+type_of("hi") = string
+type_of(true) = number
+type_of([1,2]) = array
+
+score: 42
+1 == 1: 1
+1 == "1": 0
+true == 1: 1
+
+[1,2] == [1,2]: 0
+a == c (same ref): 1"
+`;
