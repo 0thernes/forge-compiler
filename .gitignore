@@ -10,3 +10,6 @@ Thumbs.db
 
 # This repository intentionally tracks a credential-free npm policy file.
 !.npmrc
+
+# Mutation-test scratch copy (deleted on exit; survives only a hard kill)
+src/compiler/.mutation-vm.tmp.js
