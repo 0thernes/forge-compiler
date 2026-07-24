@@ -47,8 +47,8 @@ const mutations = [
 ];
 
 let failed = false;
-const baselineMismatches = findDifferentialMismatches((source) =>
-  runSource(source),
+const baselineMismatches = findDifferentialMismatches((source, options) =>
+  runSource(source, options),
 );
 if (baselineMismatches.length > 0) {
   console.error(
@@ -97,8 +97,8 @@ try {
     const mutant = await import(
       `${pathToFileURL(join(mutantCompiler, "index.js")).href}?mutation=${index}`
     );
-    const mismatches = findDifferentialMismatches((source) =>
-      mutant.runSource(source),
+    const mismatches = findDifferentialMismatches((source, options) =>
+      mutant.runSource(source, options),
     );
     const mismatchNames = new Set(mismatches.map((mismatch) => mismatch.name));
     const missingExpectedCases = mutation.expectedCases.filter(

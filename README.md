@@ -16,7 +16,7 @@ Version 14.1 adds a backend-independent execution oracle and turns the
 interface into an adaptive retro-future compiler laboratory:
 
 - a backend-independent AST tree-walk interpreter cross-checks the production
-  stack-machine backend across 89 curated differential cases;
+  stack-machine backend across 91 curated differential cases;
 - a mutation-sensitivity gate proves that the corpus detects relational,
   arithmetic, scope, and short-circuit code-generation defects;
 - string concatenation preserves complete program-visible values up to the

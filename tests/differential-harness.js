@@ -1,9 +1,9 @@
 import { runReference } from "./reference-interpreter.js";
 import { DIFFERENTIAL_CASES } from "./differential-corpus.js";
 
-function capture(runner, source) {
+function capture(runner, source, options) {
   try {
-    return { result: runner(source), error: null };
+    return { result: runner(source, options), error: null };
   } catch (error) {
     return { result: null, error };
   }
@@ -53,8 +53,9 @@ export function compareDifferentialCase(
   vmRunner,
   referenceRunner = runReference,
 ) {
-  const vm = capture(vmRunner, testCase.source);
-  const reference = capture(referenceRunner, testCase.source);
+  const options = testCase.limits ? { limits: testCase.limits } : undefined;
+  const vm = capture(vmRunner, testCase.source, options);
+  const reference = capture(referenceRunner, testCase.source, options);
 
   if (testCase.errorIncludes) {
     if (!vm.error || !reference.error) {

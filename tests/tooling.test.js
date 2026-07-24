@@ -67,4 +67,16 @@ describe("repository verification tools", () => {
       /Artifact verification failed:[\s\S]*missing required artifact path: README\.md/,
     );
   });
+
+  it("rejects a portable README path that is not a regular file", async () => {
+    const root = await temporaryRoot("forge-artifact-");
+    await mkdir(path.join(root, "assets"));
+    await mkdir(path.join(root, "README.md"));
+    await writeFile(path.join(root, "index.html"), "<!doctype html>");
+    await writeFile(path.join(root, "forge-mark.svg"), "<svg></svg>");
+
+    await expect(verifyArtifact(root, { portable: true })).rejects.toThrow(
+      /Artifact verification failed:[\s\S]*required artifact path is not a file: README\.md/,
+    );
+  });
 });

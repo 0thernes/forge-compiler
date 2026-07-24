@@ -8,7 +8,7 @@ All notable changes to FORGE are documented here.
 
 ### Added
 
-- A backend-independent AST tree-walk interpreter and 89-case differential
+- A backend-independent AST tree-walk interpreter and 91-case differential
   corpus covering canonical examples, conformance cases, focused backend
   regressions, shared-front-end failures, and explicit resource-policy
   behavior.
