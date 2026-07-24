@@ -4,6 +4,12 @@ on:
   push:
     tags:
       - "v*.*.*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing version tag to verify and release
+        required: true
+        type: string
 
 permissions: {}
 
@@ -15,14 +21,17 @@ jobs:
     permissions:
       contents: write
     concurrency:
-      group: release-${{ github.ref }}
+      group: release-${{ inputs.tag || github.ref }}
       cancel-in-progress: false
+    env:
+      RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
           persist-credentials: false
+          ref: ${{ inputs.tag || github.ref }}
 
       - name: Setup Node
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
@@ -38,10 +47,10 @@ jobs:
         run: npm audit --audit-level=moderate
 
       - name: Verify tag and version
-        run: node scripts/verify-release.mjs "$GITHUB_REF_NAME"
+        run: node scripts/verify-release.mjs "$RELEASE_TAG"
 
       - name: Verify tag commit is on main
-        run: git merge-base --is-ancestor "$GITHUB_SHA" origin/main
+        run: git merge-base --is-ancestor HEAD origin/main
 
       - name: Verify release candidate
         run: npm run verify:quality
@@ -65,10 +74,10 @@ jobs:
           cp -R docs dist/docs
           tar -czf "${archive}" -C dist .
           (cd dist && zip -q -r "../${zipfile}" .)
-          tar -tzf "${archive}" | grep -Fxq "./LICENSE"
-          tar -tzf "${archive}" | grep -Fxq "./docs/RELEASING.md"
-          unzip -Z1 "${zipfile}" | grep -Fxq "LICENSE"
-          unzip -Z1 "${zipfile}" | grep -Fxq "docs/RELEASING.md"
+          tar -tzf "${archive}" "./LICENSE" >/dev/null
+          tar -tzf "${archive}" "./docs/RELEASING.md" >/dev/null
+          unzip -tqq "${zipfile}" "LICENSE"
+          unzip -tqq "${zipfile}" "docs/RELEASING.md"
           npm sbom --sbom-format=cyclonedx > "${sbom}"
           sha256sum "${archive}" "${zipfile}" "${sbom}" > SHA256SUMS
           echo "version=${version}" >> "$GITHUB_OUTPUT"
@@ -85,14 +94,14 @@ jobs:
             "forge-compiler-v${VERSION}.cdx.json"
             "SHA256SUMS"
           )
-          if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
-            if [[ "$(gh release view "$GITHUB_REF_NAME" --json isDraft --jq .isDraft)" != "true" ]]; then
+          if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
+            if [[ "$(gh release view "$RELEASE_TAG" --json isDraft --jq .isDraft)" != "true" ]]; then
               echo "::error::Refusing to replace assets on an already-published release"
               exit 1
             fi
-            gh release upload "$GITHUB_REF_NAME" "${assets[@]}" --clobber
+            gh release upload "$RELEASE_TAG" "${assets[@]}" --clobber
           else
-            gh release create "$GITHUB_REF_NAME" "${assets[@]}" \
+            gh release create "$RELEASE_TAG" "${assets[@]}" \
               --verify-tag \
               --draft \
               --generate-notes \
