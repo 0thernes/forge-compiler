@@ -2,6 +2,8 @@ import { analyze } from "../src/compiler/analyze.js";
 import { lex } from "../src/compiler/lexer.js";
 import { parse } from "../src/compiler/parser.js";
 
+export const REFERENCE_CALL_DEPTH_CAP = 256;
+
 class ReturnSignal {
   constructor(value) {
     this.value = value;
@@ -219,6 +221,18 @@ export function runReference(
   source,
   { maxNodes = 5_000_000, limits = {} } = {},
 ) {
+  const maxCallDepth = limits.maxCallDepth ?? REFERENCE_CALL_DEPTH_CAP;
+  if (!Number.isSafeInteger(maxCallDepth) || maxCallDepth < 0) {
+    throw new Error(
+      "Reference interpreter maxCallDepth must be a non-negative safe integer",
+    );
+  }
+  if (maxCallDepth > REFERENCE_CALL_DEPTH_CAP) {
+    throw new Error(
+      `Reference interpreter maxCallDepth cannot exceed its ${REFERENCE_CALL_DEPTH_CAP}-frame operational cap`,
+    );
+  }
+
   const ast = parse(lex(source));
   analyze(ast);
 
@@ -226,7 +240,6 @@ export function runReference(
   const globalEnvironment = createEnvironment();
   let remainingNodes = maxNodes;
   let activeCallDepth = 0;
-  const maxCallDepth = limits.maxCallDepth ?? 50_000;
 
   function tick() {
     remainingNodes -= 1;
