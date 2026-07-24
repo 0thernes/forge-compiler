@@ -7,7 +7,7 @@ export function handleCompilerRequest(data) {
   try {
     let value;
     if (type === "compile") {
-      value = compileSource(payload.source);
+      value = compileSource(payload.source, { includeLinkedCode: false });
     } else if (type === "verify") {
       value = runSelfTest();
     } else {

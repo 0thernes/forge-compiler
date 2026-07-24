@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
-import { TESTS } from "../src/self-test.js";
+import { EXAMPLES } from "../src/examples.js";
+import { runConformance, TESTS } from "../src/self-test.js";
 import { compileAndRun } from "../src/compiler/index.js";
 
 // The embedded SELF-TEST table is the single source of truth for language
@@ -16,4 +17,27 @@ describe("conformance (embedded SELF-TEST table)", () => {
       }
     });
   }
+});
+
+describe("v13 compatibility adapters", () => {
+  it("keeps the Closures example alias without duplicating the corpus", () => {
+    expect(EXAMPLES.Closures).toBe(EXAMPLES["Nested Functions"]);
+    expect(Object.keys(EXAMPLES)).not.toContain("Closures");
+  });
+
+  it("keeps custom predicates dependent on the supplied output", () => {
+    const testCase = TESTS.find(
+      (entry) => entry.name === "large output is bounded",
+    );
+    expect(testCase.expect(["definitely wrong output"])).toBe(false);
+    expect(testCase.expect(compileAndRun(testCase.src).output)).toBe(true);
+  });
+
+  it("retains the runConformance report contract", () => {
+    expect(runConformance()).toMatchObject({
+      failures: [],
+      exampleCount: Object.keys(EXAMPLES).length,
+      testCount: TESTS.length,
+    });
+  });
 });

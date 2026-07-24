@@ -161,7 +161,9 @@ describe("linker", () => {
       codegen(parse(lex(`fn f() { return 1; } if (f()) { print("y"); }`))),
     );
     for (const inst of code) {
-      if (["JMP", "JZ", "JNZ", "CALL"].includes(inst.op)) {
+      if (
+        ["JUMP", "JUMP_IF_ZERO", "JUMP_IF_NONZERO", "CALL"].includes(inst.op)
+      ) {
         expect(typeof inst.target).toBe("number");
       }
     }

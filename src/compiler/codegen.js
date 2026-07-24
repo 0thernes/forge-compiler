@@ -25,7 +25,10 @@ export function codegen(ast, limitOverrides = {}) {
   let functionId = 0;
   let blockDepth = 0;
   const loopStack = [];
-  let functionNameScopes = [new Map()];
+  let functionScope = {
+    parent: null,
+    names: new Map(),
+  };
 
   function emit(opcode, argument) {
     if (instructions.length >= limits.maxInstructions) {
@@ -53,23 +56,18 @@ export function codegen(ast, limitOverrides = {}) {
     return label;
   }
 
-  function snapshotFunctionScopes() {
-    return functionNameScopes.map((scope) => new Map(scope));
-  }
-
   function resolveFunction(name) {
-    for (let index = functionNameScopes.length - 1; index >= 0; index -= 1) {
-      const label = functionNameScopes[index].get(name);
+    for (let scope = functionScope; scope; scope = scope.parent) {
+      const label = scope.names.get(name);
       if (label) return label;
     }
     return name;
   }
 
   function predeclareFunctions(body) {
-    const scope = functionNameScopes.at(-1);
     for (const node of body) {
       if (node.type !== "FnDecl") continue;
-      if (scope.has(node.name)) {
+      if (functionScope.names.has(node.name)) {
         throw codegenError(
           `Function '${node.name}' is already declared in this scope`,
           { position: node.namePosition },
@@ -77,13 +75,12 @@ export function codegen(ast, limitOverrides = {}) {
         );
       }
       const label = newFunctionLabel(node.name);
-      scope.set(node.name, label);
+      functionScope.names.set(node.name, label);
       functionLabels.set(node, label);
     }
   }
 
   function queueFunctions(body) {
-    const scopeSnapshot = snapshotFunctionScopes();
     for (const node of body) {
       if (node.type !== "FnDecl" || queuedFunctions.has(node)) {
         continue;
@@ -92,7 +89,7 @@ export function codegen(ast, limitOverrides = {}) {
       pendingFunctions.push({
         node,
         label: functionLabels.get(node),
-        scopeSnapshot,
+        parentScope: functionScope,
       });
     }
   }
@@ -117,9 +114,13 @@ export function codegen(ast, limitOverrides = {}) {
   function generateScopedBlock(node) {
     emit("ENTER_SCOPE");
     blockDepth += 1;
-    functionNameScopes.push(new Map());
+    const parentScope = functionScope;
+    functionScope = {
+      parent: parentScope,
+      names: new Map(),
+    };
     generateBlockContents(node.body);
-    functionNameScopes.pop();
+    functionScope = parentScope;
     blockDepth -= 1;
     emit("EXIT_SCOPE");
   }
@@ -319,12 +320,14 @@ export function codegen(ast, limitOverrides = {}) {
     }
   }
 
-  function generateFunction({ node, label, scopeSnapshot }) {
-    const savedScopes = functionNameScopes;
+  function generateFunction({ node, label, parentScope }) {
+    const savedFunctionScope = functionScope;
     const savedBlockDepth = blockDepth;
     const savedLoops = [...loopStack];
-    functionNameScopes = scopeSnapshot.map((scope) => new Map(scope));
-    functionNameScopes.push(new Map());
+    functionScope = {
+      parent: parentScope,
+      names: new Map(),
+    };
     blockDepth = 0;
     loopStack.length = 0;
 
@@ -339,7 +342,7 @@ export function codegen(ast, limitOverrides = {}) {
     emit("PUSH", 0);
     emit("RETURN");
 
-    functionNameScopes = savedScopes;
+    functionScope = savedFunctionScope;
     blockDepth = savedBlockDepth;
     loopStack.length = 0;
     loopStack.push(...savedLoops);
@@ -348,20 +351,55 @@ export function codegen(ast, limitOverrides = {}) {
   emit("LABEL", ENTRY_LABEL);
   generateBlockContents(ast.body);
   emit("HALT");
-  while (pendingFunctions.length > 0) {
-    generateFunction(pendingFunctions.shift());
+  for (
+    let pendingIndex = 0;
+    pendingIndex < pendingFunctions.length;
+    pendingIndex += 1
+  ) {
+    generateFunction(pendingFunctions[pendingIndex]);
   }
   return instructions;
 }
 
 export function link(instructions) {
+  if (!Array.isArray(instructions)) {
+    throw new ForgeError("Linker input must be an instruction array", {
+      phase: "link",
+      code: "LINK_INPUT",
+    });
+  }
+
   const labels = new Map();
   const code = [];
 
-  for (const instruction of instructions) {
+  for (let index = 0; index < instructions.length; index += 1) {
+    const instruction = instructions[index];
+    if (
+      instruction === null ||
+      typeof instruction !== "object" ||
+      Array.isArray(instruction)
+    ) {
+      throw new ForgeError(`Invalid instruction at assembly index ${index}`, {
+        phase: "link",
+        code: "LINK_INSTRUCTION",
+      });
+    }
+
     const opcode = instruction.opcode ?? instruction.op;
     const argument = instruction.argument ?? instruction.arg;
+    if (typeof opcode !== "string" || opcode.length === 0) {
+      throw new ForgeError(
+        `Instruction at assembly index ${index} has no opcode`,
+        { phase: "link", code: "LINK_OPCODE" },
+      );
+    }
     if (opcode === "LABEL") {
+      if (typeof argument !== "string" || argument.length === 0) {
+        throw new ForgeError(
+          `Label at assembly index ${index} must have a name`,
+          { phase: "link", code: "LINK_LABEL" },
+        );
+      }
       if (labels.has(argument)) {
         throw new ForgeError(`Duplicate label: ${argument}`, {
           phase: "link",
@@ -412,10 +450,35 @@ export function link(instructions) {
 }
 
 export function computeInstructionAddresses(instructions) {
+  if (!Array.isArray(instructions)) {
+    throw new ForgeError("Assembly must be an instruction array", {
+      phase: "codegen",
+      code: "CODEGEN_ASSEMBLY_INPUT",
+    });
+  }
+
   const addresses = [];
   let programCounter = 0;
-  for (const instruction of instructions) {
-    if (instruction.opcode === "LABEL") {
+  for (let index = 0; index < instructions.length; index += 1) {
+    const instruction = instructions[index];
+    if (
+      instruction === null ||
+      typeof instruction !== "object" ||
+      Array.isArray(instruction)
+    ) {
+      throw new ForgeError(`Invalid instruction at assembly index ${index}`, {
+        phase: "codegen",
+        code: "CODEGEN_ASSEMBLY_INSTRUCTION",
+      });
+    }
+    const opcode = instruction.opcode ?? instruction.op;
+    if (typeof opcode !== "string" || opcode.length === 0) {
+      throw new ForgeError(
+        `Instruction at assembly index ${index} has no opcode`,
+        { phase: "codegen", code: "CODEGEN_ASSEMBLY_OPCODE" },
+      );
+    }
+    if (opcode === "LABEL") {
       addresses.push(null);
     } else {
       addresses.push(programCounter);

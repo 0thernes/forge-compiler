@@ -19,7 +19,7 @@ import {
 } from "./format.js";
 import { lex } from "./lexer.js";
 import { parse } from "./parser.js";
-import { execute } from "./vm.js";
+import { execute, executeLinked } from "./vm.js";
 
 function now() {
   return globalThis.performance?.now?.() ?? Date.now();
@@ -33,7 +33,7 @@ function measure(callback) {
 
 export function compileSource(
   source,
-  { run = true, limits: limitOverrides = {} } = {},
+  { run = true, includeLinkedCode = true, limits: limitOverrides = {} } = {},
 ) {
   const limits = mergeLimits(limitOverrides);
   try {
@@ -44,8 +44,9 @@ export function compileSource(
     const instructionAddresses = computeInstructionAddresses(
       codegenStage.value,
     );
+    const linkStage = measure(() => link(codegenStage.value));
     const executionStage = run
-      ? measure(() => execute(codegenStage.value, limits))
+      ? measure(() => executeLinked(linkStage.value, limits))
       : { value: null, milliseconds: 0 };
 
     return {
@@ -54,6 +55,7 @@ export function compileSource(
       ast: parseStage.value,
       analysis: analysisStage.value,
       assembly: codegenStage.value,
+      ...(includeLinkedCode ? { linkedCode: linkStage.value } : {}),
       instructionAddresses,
       result: executionStage.value,
       timings: {
@@ -61,12 +63,14 @@ export function compileSource(
         parse: parseStage.milliseconds,
         analyze: analysisStage.milliseconds,
         codegen: codegenStage.milliseconds,
+        link: linkStage.milliseconds,
         execute: executionStage.milliseconds,
         total:
           tokenStage.milliseconds +
           parseStage.milliseconds +
           analysisStage.milliseconds +
           codegenStage.milliseconds +
+          linkStage.milliseconds +
           executionStage.milliseconds,
       },
     };

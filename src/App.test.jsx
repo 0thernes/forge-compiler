@@ -1,8 +1,59 @@
 // @vitest-environment jsdom
 
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { describe, expect, it } from "vitest";
+import {
+  act,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from "@testing-library/react";
+import {
+  afterAll,
+  afterEach,
+  beforeAll,
+  beforeEach,
+  describe,
+  expect,
+  it,
+  vi,
+} from "vitest";
 import ForgeCompiler from "./App.jsx";
+import { compileSource } from "./compiler/index.js";
+
+const originalStorageDescriptor = Object.getOwnPropertyDescriptor(
+  window,
+  "localStorage",
+);
+const draftStorage = new Map();
+const testStorage = {
+  clear: () => draftStorage.clear(),
+  getItem: (key) => draftStorage.get(key) ?? null,
+  removeItem: (key) => draftStorage.delete(key),
+  setItem: (key, value) => draftStorage.set(key, String(value)),
+};
+
+beforeAll(() => {
+  Object.defineProperty(window, "localStorage", {
+    configurable: true,
+    value: testStorage,
+  });
+});
+
+beforeEach(() => {
+  testStorage.clear();
+});
+
+afterEach(() => {
+  vi.unstubAllGlobals();
+});
+
+afterAll(() => {
+  if (originalStorageDescriptor) {
+    Object.defineProperty(window, "localStorage", originalStorageDescriptor);
+  } else {
+    delete window.localStorage;
+  }
+});
 
 describe("ForgeCompiler interface", () => {
   it("exposes the editor and compiler inspectors accessibly", () => {
@@ -10,15 +61,21 @@ describe("ForgeCompiler interface", () => {
     expect(screen.getByRole("heading", { name: "FORGE" })).toBeInTheDocument();
     expect(
       screen.getByRole("textbox", { name: "FORGE source code" }),
-    ).toBeInTheDocument();
+    ).toHaveAttribute("maxlength", "250000");
     expect(
       screen.getByRole("tablist", { name: "Compiler inspectors" }),
     ).toBeInTheDocument();
-    expect(screen.getAllByRole("tab")).toHaveLength(6);
-    expect(screen.getByRole("tab", { name: /source/i })).toHaveAttribute(
+    const tabs = screen.getAllByRole("tab");
+    expect(tabs).toHaveLength(6);
+    expect(screen.getByRole("tab", { name: "Source" })).toHaveAttribute(
       "aria-selected",
       "true",
     );
+    for (const tab of tabs) {
+      expect(
+        document.getElementById(tab.getAttribute("aria-controls")),
+      ).not.toBeNull();
+    }
   });
 
   it("runs source through the complete pipeline", async () => {
@@ -66,6 +123,9 @@ describe("ForgeCompiler interface", () => {
     editor.setSelectionRange(1, 1);
     fireEvent.keyDown(editor, { key: "Tab" });
     expect(editor).toHaveValue("x  ");
+    expect(fireEvent.keyDown(editor, { key: "Tab", shiftKey: true })).toBe(
+      true,
+    );
 
     const sourceTab = screen.getByRole("tab", { name: /source/i });
     sourceTab.focus();
@@ -107,7 +167,112 @@ describe("ForgeCompiler interface", () => {
       expect(screen.getByRole("status")).toHaveTextContent("Self-test passed");
     });
     expect(screen.getByRole("status")).toHaveTextContent(
-      "Repository CI runs separately on GitHub",
+      "workflow runs the full release gate when hosted on GitHub",
     );
+  });
+
+  it("serializes verification and keyboard compilation requests", async () => {
+    class ControlledWorker {
+      constructor() {
+        this.messages = [];
+        this.terminate = () => {};
+        ControlledWorker.instance = this;
+      }
+
+      postMessage(message) {
+        this.messages.push(message);
+      }
+    }
+    vi.stubGlobal("Worker", ControlledWorker);
+
+    render(<ForgeCompiler />);
+    fireEvent.click(screen.getByRole("button", { name: /verify pipeline/i }));
+    const editor = screen.getByRole("textbox", {
+      name: "FORGE source code",
+    });
+    fireEvent.keyDown(editor, { key: "Enter", ctrlKey: true });
+
+    expect(ControlledWorker.instance.messages).toHaveLength(1);
+    const request = ControlledWorker.instance.messages[0];
+    expect(request.type).toBe("verify");
+
+    act(() => {
+      ControlledWorker.instance.onmessage({
+        data: {
+          id: request.id,
+          ok: true,
+          value: {
+            ok: true,
+            exampleCount: 1,
+            assertionCount: 1,
+            durationMilliseconds: 1,
+          },
+        },
+      });
+    });
+
+    await waitFor(() => {
+      expect(
+        screen.getByRole("button", { name: /run program/i }),
+      ).toBeEnabled();
+    });
+  });
+
+  it("restores a versioned source draft", () => {
+    window.localStorage.setItem(
+      "forge-compiler:draft",
+      JSON.stringify({
+        version: 1,
+        source: `print("saved draft");`,
+      }),
+    );
+    render(<ForgeCompiler />);
+    expect(
+      screen.getByRole("textbox", { name: "FORGE source code" }),
+    ).toHaveValue(`print("saved draft");`);
+  });
+
+  it("ignores an in-flight result after the source changes", async () => {
+    class ControlledWorker {
+      constructor() {
+        this.messages = [];
+        this.terminate = () => {};
+        ControlledWorker.instance = this;
+      }
+
+      postMessage(message) {
+        this.messages.push(message);
+      }
+    }
+    vi.stubGlobal("Worker", ControlledWorker);
+
+    const view = render(<ForgeCompiler />);
+    const editor = screen.getByRole("textbox", {
+      name: "FORGE source code",
+    });
+    fireEvent.change(editor, { target: { value: `print("old");` } });
+    fireEvent.click(screen.getByRole("button", { name: /run program/i }));
+    fireEvent.change(editor, { target: { value: `print("new");` } });
+
+    const request = ControlledWorker.instance.messages[0];
+    act(() => {
+      ControlledWorker.instance.onmessage({
+        data: {
+          id: request.id,
+          ok: true,
+          value: compileSource(request.payload.source),
+        },
+      });
+    });
+
+    await waitFor(() => {
+      expect(
+        screen.getByRole("button", { name: /run program/i }),
+      ).toBeEnabled();
+    });
+    expect(editor).toHaveValue(`print("new");`);
+    expect(screen.queryByText("forge://stdout")).not.toBeInTheDocument();
+
+    view.unmount();
   });
 });

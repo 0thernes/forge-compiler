@@ -1,0 +1,100 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+
+permissions: {}
+
+jobs:
+  release:
+    name: Verify and draft release
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: write
+    concurrency:
+      group: release-${{ github.ref }}
+      cancel-in-progress: false
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Setup Node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+          cache-dependency-path: package-lock.json
+
+      - name: Install dependencies
+        run: npm ci --ignore-scripts --no-audit --no-fund
+
+      - name: Audit dependencies
+        run: npm audit --audit-level=moderate
+
+      - name: Verify tag and version
+        run: node scripts/verify-release.mjs "$GITHUB_REF_NAME"
+
+      - name: Verify tag commit is on main
+        run: git merge-base --is-ancestor "$GITHUB_SHA" origin/main
+
+      - name: Verify release candidate
+        run: npm run verify:quality
+
+      - name: Build portable release
+        run: npm run build
+        env:
+          BASE_PATH: ./
+
+      - name: Package artifacts, SBOM, and checksums
+        id: package
+        shell: bash
+        run: |
+          version="$(node -p "require('./package.json').version")"
+          archive="forge-compiler-v${version}.tar.gz"
+          zipfile="forge-compiler-v${version}.zip"
+          sbom="forge-compiler-v${version}.cdx.json"
+          install -m 0644 \
+            CHANGELOG.md CONTRIBUTING.md LICENSE README.md SECURITY.md \
+            dist/
+          cp -R docs dist/docs
+          tar -czf "${archive}" -C dist .
+          (cd dist && zip -q -r "../${zipfile}" .)
+          tar -tzf "${archive}" | grep -Fxq "./LICENSE"
+          tar -tzf "${archive}" | grep -Fxq "./docs/RELEASING.md"
+          unzip -Z1 "${zipfile}" | grep -Fxq "LICENSE"
+          unzip -Z1 "${zipfile}" | grep -Fxq "docs/RELEASING.md"
+          npm sbom --sbom-format=cyclonedx > "${sbom}"
+          sha256sum "${archive}" "${zipfile}" "${sbom}" > SHA256SUMS
+          echo "version=${version}" >> "$GITHUB_OUTPUT"
+
+      - name: Create or update draft release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.package.outputs.version }}
+        run: |
+          assets=(
+            "forge-compiler-v${VERSION}.tar.gz"
+            "forge-compiler-v${VERSION}.zip"
+            "forge-compiler-v${VERSION}.cdx.json"
+            "SHA256SUMS"
+          )
+          if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+            if [[ "$(gh release view "$GITHUB_REF_NAME" --json isDraft --jq .isDraft)" != "true" ]]; then
+              echo "::error::Refusing to replace assets on an already-published release"
+              exit 1
+            fi
+            gh release upload "$GITHUB_REF_NAME" "${assets[@]}" --clobber
+          else
+            gh release create "$GITHUB_REF_NAME" "${assets[@]}" \
+              --verify-tag \
+              --draft \
+              --generate-notes \
+              --title "FORGE v${VERSION}"
+          fi

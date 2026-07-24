@@ -1,8 +1,10 @@
 import { describe, expect, it } from "vitest";
+import packageMetadata from "../../package.json";
 import { analyze } from "./analyze.js";
-import { BUILTINS, KEYWORDS } from "./constants.js";
+import { BUILTINS, FORGE_VERSION, KEYWORDS } from "./constants.js";
 import {
   compileSource,
+  computeInstructionAddresses,
   execute,
   formatValue,
   lex,
@@ -16,6 +18,7 @@ import { EXAMPLES } from "./examples.js";
 import { runSelfTest } from "./selfTest.js";
 import { SELF_TEST_CASES } from "./selfTestCases.js";
 import { link as compatibilityLink } from "./linker.js";
+import { executeLinked } from "./vm.js";
 
 describe("FORGE v14 compatibility corpus", () => {
   for (const testCase of SELF_TEST_CASES) {
@@ -63,6 +66,15 @@ describe("example programs", () => {
       "captured counter = 42",
     ]);
   });
+
+  it("isolates same-named functions declared in sibling blocks", () => {
+    expect(
+      runSource(`
+if (true) { fn local() { return 1; } print(local()); }
+if (true) { fn local() { return 2; } print(local()); }
+`).output,
+    ).toEqual(["1", "2"]);
+  });
 });
 
 describe("pipeline contracts", () => {
@@ -76,10 +88,12 @@ describe("pipeline contracts", () => {
       calls: 0,
     });
     expect(compilation.assembly.length).toBeGreaterThan(0);
+    expect(compilation.linkedCode.length).toBeGreaterThan(0);
     expect(compilation.instructionAddresses).toHaveLength(
       compilation.assembly.length,
     );
     expect(compilation.result.output).toEqual(["42"]);
+    expect(compilation.timings.link).toBeGreaterThanOrEqual(0);
     expect(compilation.timings.total).toBeGreaterThanOrEqual(0);
   });
 
@@ -87,6 +101,23 @@ describe("pipeline contracts", () => {
     const compilation = compileSource(`print("compiled");`, { run: false });
     expect(compilation.result).toBeNull();
     expect(compilation.assembly.length).toBeGreaterThan(0);
+    expect(
+      compilation.linkedCode.every((entry) => entry.opcode !== "LABEL"),
+    ).toBe(true);
+    expect(compilation.timings.link).toBeGreaterThanOrEqual(0);
+  });
+
+  it("can omit linked code from transport-heavy consumers", () => {
+    const compilation = compileSource(`print("compiled");`, {
+      includeLinkedCode: false,
+    });
+    expect(compilation).not.toHaveProperty("linkedCode");
+    expect(compilation.timings.link).toBeGreaterThanOrEqual(0);
+    expect(compilation.result.output).toEqual(["compiled"]);
+  });
+
+  it("keeps package and compiler versions synchronized", () => {
+    expect(packageMetadata.version).toBe(FORGE_VERSION);
   });
 
   it("renders a readable AST", () => {
@@ -174,6 +205,15 @@ describe("linker integrity", () => {
     expect(assembly).toEqual(before);
   });
 
+  it("computes addresses for modern and legacy instruction aliases", () => {
+    expect(
+      computeInstructionAddresses([
+        { op: "LABEL", arg: "$$start" },
+        { op: "HALT" },
+      ]),
+    ).toEqual([null, 0]);
+  });
+
   it("rejects duplicate labels", () => {
     expect(() =>
       link([
@@ -190,6 +230,20 @@ describe("linker integrity", () => {
     expect(() => link([{ opcode: "CALL", argument: "missing" }])).toThrow(
       "Undefined function",
     );
+  });
+
+  it("rejects malformed linker and address inputs", () => {
+    expect(() => link(null)).toThrow("instruction array");
+    expect(() => link([null])).toThrow("Invalid instruction");
+    expect(() => link([{}])).toThrow("has no opcode");
+    expect(() => link([{ opcode: "LABEL" }])).toThrow("must have a name");
+    expect(() => computeInstructionAddresses(null)).toThrow(
+      "instruction array",
+    );
+    expect(() => computeInstructionAddresses([null])).toThrow(
+      "Invalid instruction",
+    );
+    expect(() => computeInstructionAddresses([{}])).toThrow("has no opcode");
   });
 });
 
@@ -283,6 +337,55 @@ describe("execution budgets and historical trace", () => {
     expect(result.outputTruncationReason).toBe("characters");
   });
 
+  it("validates direct assembly before execution", () => {
+    expect(() =>
+      execute([{ opcode: "PUSH", argument: 1 }, { opcode: "HALT" }], {
+        maxInstructions: 1,
+      }),
+    ).toThrow("Instruction count exceeds");
+    expect(() =>
+      execute(
+        [{ opcode: "PUSH_STRING", argument: "too long" }, { opcode: "HALT" }],
+        { maxStringLength: 3 },
+      ),
+    ).toThrow("String length exceeds");
+    expect(() =>
+      execute([{ opcode: "MAKE_ARRAY", argument: -1 }, { opcode: "HALT" }]),
+    ).toThrow("non-negative safe integer");
+    expect(() => execute([null])).toThrow("Invalid instruction");
+
+    expect(
+      execute([
+        { op: "PUSH", arg: 7 },
+        { op: "PRINT" },
+        { op: "PRINT_LINE" },
+        { op: "HALT" },
+      ]).output,
+    ).toEqual(["7"]);
+  });
+
+  it("enforces canonical linked-code and control-flow boundaries", () => {
+    expect(() =>
+      executeLinked([{ opcode: "LABEL", argument: "$$entry" }]),
+    ).toThrow("Unknown opcode");
+    expect(() => executeLinked([{ opcode: "BOGUS" }])).toThrow(
+      "Unknown opcode at assembly index 0",
+    );
+    expect(() => executeLinked([{ op: "HALT" }])).toThrow("Unknown opcode");
+    expect(() =>
+      executeLinked([{ opcode: "CALL", argument: "$$fn", target: 1 }]),
+    ).toThrow("invalid target");
+
+    const result = executeLinked([
+      { opcode: "JUMP", argument: "$$end", target: 1 },
+    ]);
+    expect(result).toMatchObject({
+      status: "halted",
+      callDepth: 0,
+      stackDepth: 0,
+    });
+  });
+
   it("counts separators inside the output-character budget", () => {
     const result = compileSource(`print("a"); print("bc");`, {
       limits: { maxOutputCharacters: 3 },
@@ -357,6 +460,42 @@ describe("lexer and formatter hardening", () => {
   it("handles shared references without treating them as cycles", () => {
     const shared = [1];
     expect(formatValue([shared, shared])).toBe("[[1], [1]]");
+  });
+
+  it("applies one aggregate character budget with balanced delimiters", () => {
+    expect(formatValue("abcdef", { maxCharacters: 5 })).toBe('"ab…"');
+    expect(formatValue([1, 2, 3], { maxCharacters: 5 })).toBe("[…]");
+
+    const shared = "\\".repeat(50_000);
+    const rendered = formatValue(Array(1_000).fill(shared), {
+      maxCharacters: 1_000,
+      maxItems: 1_000,
+    });
+    expect(rendered.length).toBeLessThanOrEqual(1_000);
+    expect(rendered.startsWith("[")).toBe(true);
+    expect(rendered.endsWith("]")).toBe(true);
+    expect(rendered).toContain("…");
+    expect(formatValue(["abcdef", 2, 3], { maxCharacters: 9 })).toBe(
+      '["a…", …]',
+    );
+  });
+
+  it("marks truncated final children instead of displaying empty values", () => {
+    expect(formatValue(["a", "b"], { maxCharacters: 9 })).toBe('["a", …]');
+    expect(formatValue(["abcdef", "ghijkl"], { maxCharacters: 14 })).toBe(
+      '["abcdef", …]',
+    );
+    expect(
+      formatValue(
+        [
+          [1, 2],
+          [3, 4],
+        ],
+        { maxCharacters: 12 },
+      ),
+    ).toBe("[[1, 2], …]");
+    expect(formatValue("nonempty", { maxCharacters: 2 })).toBe("…");
+    expect(formatValue([1], { maxCharacters: 2 })).toBe("…");
   });
 });
 

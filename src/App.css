@@ -20,7 +20,7 @@
   --border-soft: #182230;
   --text: #e7edf5;
   --muted: #8795a8;
-  --faint: #566477;
+  --faint: #8290a3;
   --green: #b7f397;
   --green-strong: #89df67;
   --cyan: #70d7e7;
@@ -485,6 +485,7 @@ kbd {
 
 .editor-hint {
   min-height: 36px;
+  flex-wrap: wrap;
   justify-content: flex-end;
   border-top: 1px solid var(--border-soft);
   border-bottom: 0;
@@ -602,7 +603,8 @@ kbd {
   border: 1px solid var(--border);
   border-radius: 9px;
   background: rgb(13 18 25 / 94%);
-  overflow: hidden;
+  overflow-x: auto;
+  overflow-y: hidden;
   font-family: var(--mono);
   font-size: 11px;
 }
@@ -640,10 +642,33 @@ kbd {
 }
 
 .assembly-label {
-  padding: 14px 16px 7px;
+  display: grid;
+  min-width: max-content;
+  min-height: 35px;
+  grid-template-columns: 62px minmax(160px, 0.4fr) minmax(160px, 1fr);
+  align-items: center;
   border-bottom: 1px solid var(--border-soft);
   color: var(--green);
-  overflow-wrap: anywhere;
+}
+
+.assembly-label > * {
+  overflow: hidden;
+  padding: 7px 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.assembly-label > span {
+  color: var(--faint);
+  text-align: right;
+}
+
+.assembly-label > strong {
+  color: var(--green);
+}
+
+.assembly-label > code {
+  color: var(--green);
 }
 
 .metric-grid {
@@ -1000,7 +1025,8 @@ td:last-child {
     grid-template-columns: 1fr;
   }
 
-  .assembly-row {
+  .assembly-row,
+  .assembly-label {
     grid-template-columns: 48px 135px minmax(160px, 1fr);
   }
 

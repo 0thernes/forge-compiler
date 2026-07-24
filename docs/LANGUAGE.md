@@ -163,6 +163,21 @@ them, and completes one output record. `print();` emits an empty record. Strings
 print without quotes; strings inside arrays are quoted and escaped. Cyclic
 arrays are represented safely.
 
+## Compiler API
+
+`compileSource(source)` returns tokens, AST, analysis summary, labelled
+`assembly`, resolved `linkedCode`, instruction addresses, per-stage timings,
+and the VM result. Pass `{ run: false }` to stop after linking; the execution
+result is then `null`. Pass `{ includeLinkedCode: false }` when a transport does
+not need the resolved instruction copy; linking still runs and remains timed.
+
+The lower-level `execute(assembly, limits)` API accepts modern or compatibility
+instruction field names, but validates instruction count, opcodes, operands,
+targets, strings, and arrays before execution. Internal linked code uses the
+canonical `opcode` and `argument` fields, contains no `LABEL` instructions, and
+requires calls to target an actual instruction; jumps may target the program
+end.
+
 ## Diagnostics
 
 Failures identify their compiler phase:

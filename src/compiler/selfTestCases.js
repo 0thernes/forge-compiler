@@ -233,6 +233,7 @@ export const SELF_TEST_CASES = Object.freeze([
   {
     name: "top-level globals survive normal termination",
     source: `let constructor = 7; print(constructor);`,
+    expectedOutput: "7",
     validate(result) {
       return result.globals.constructor === 7;
     },
