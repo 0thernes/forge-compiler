@@ -1,5 +1,8 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="FORGE">
-  <rect width="64" height="64" rx="14" fill="#0b1017"/>
-  <path d="M17 14h34v8H27v8h20v8H27v14H17z" fill="#b7f397"/>
-  <path d="M47 42h8v10h-8z" fill="#70d7e7"/>
+  <rect width="64" height="64" rx="12" fill="#241912"/>
+  <path d="M0 9h64v5H0z" fill="#e14d2a"/>
+  <path d="M0 14h64v4H0z" fill="#efa72f"/>
+  <path d="M0 18h64v4H0z" fill="#64a69a"/>
+  <path d="M17 27h32v7H26v7h19v7H26v12h-9z" fill="#fff2d2"/>
+  <circle cx="50" cy="53" r="4" fill="#e14d2a"/>
 </svg>

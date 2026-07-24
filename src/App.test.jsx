@@ -5,6 +5,7 @@ import {
   fireEvent,
   render,
   screen,
+  within,
   waitFor,
 } from "@testing-library/react";
 import {
@@ -31,6 +32,22 @@ const testStorage = {
   removeItem: (key) => draftStorage.delete(key),
   setItem: (key, value) => draftStorage.set(key, String(value)),
 };
+
+function stubCompactViewport() {
+  vi.stubGlobal(
+    "matchMedia",
+    vi.fn((media) => ({
+      matches: true,
+      media,
+      onchange: null,
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+      addListener: vi.fn(),
+      removeListener: vi.fn(),
+      dispatchEvent: vi.fn(),
+    })),
+  );
+}
 
 beforeAll(() => {
   Object.defineProperty(window, "localStorage", {
@@ -66,8 +83,8 @@ describe("ForgeCompiler interface", () => {
       screen.getByRole("tablist", { name: "Compiler inspectors" }),
     ).toBeInTheDocument();
     const tabs = screen.getAllByRole("tab");
-    expect(tabs).toHaveLength(6);
-    expect(screen.getByRole("tab", { name: "Source" })).toHaveAttribute(
+    expect(tabs).toHaveLength(5);
+    expect(screen.getByRole("tab", { name: "Output" })).toHaveAttribute(
       "aria-selected",
       "true",
     );
@@ -76,7 +93,16 @@ describe("ForgeCompiler interface", () => {
         document.getElementById(tab.getAttribute("aria-controls")),
       ).not.toBeNull();
     }
-    expect(screen.getByRole("tabpanel")).toHaveAttribute("tabindex", "0");
+    expect(screen.getByRole("tabpanel")).not.toHaveAttribute("tabindex");
+    expect(
+      screen.getByRole("region", { name: "Source program" }),
+    ).toContainElement(
+      screen.getByRole("textbox", { name: "FORGE source code" }),
+    );
+    expect(screen.getAllByRole("radio")).toHaveLength(4);
+    expect(
+      screen.getByRole("link", { name: "Skip to source editor" }),
+    ).toHaveAttribute("href", "#forge-source");
   });
 
   it("runs source through the complete pipeline", async () => {
@@ -85,8 +111,13 @@ describe("ForgeCompiler interface", () => {
 
     await screen.findByText("forge://stdout");
     expect(screen.getByText("halted")).toBeInTheDocument();
-    expect(screen.getByText(/a = \[10, 20, 30\]/)).toBeInTheDocument();
+    expect(
+      screen.getByRole("region", { name: "Program output" }),
+    ).toHaveTextContent("a = [10, 20, 30]");
     expect(screen.getByText("Final global state")).toBeInTheDocument();
+    expect(
+      screen.getByRole("textbox", { name: "FORGE source code" }),
+    ).toBeInTheDocument();
     expect(
       screen.getByRole("region", { name: "Program output" }),
     ).toHaveAttribute("tabindex", "0");
@@ -118,17 +149,13 @@ describe("ForgeCompiler interface", () => {
     await screen.findByText("forge://stdout");
     expect(screen.getByText("ok")).toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole("tab", { name: /source/i }));
-    const nextEditor = screen.getByRole("textbox", {
-      name: "FORGE source code",
-    });
-    fireEvent.change(nextEditor, {
+    fireEvent.change(editor, {
       target: { value: `print(missing);` },
     });
     fireEvent.click(screen.getByRole("button", { name: /run program/i }));
 
     const alert = await screen.findByRole("alert");
-    expect(alert).toHaveTextContent("analyze error");
+    expect(alert).toHaveTextContent("analyze fault");
     expect(alert).toHaveTextContent("Undefined variable: missing");
     expect(screen.queryByText("forge://stdout")).not.toBeInTheDocument();
   });
@@ -146,10 +173,10 @@ describe("ForgeCompiler interface", () => {
       true,
     );
 
-    const sourceTab = screen.getByRole("tab", { name: /source/i });
-    sourceTab.focus();
-    fireEvent.keyDown(sourceTab, { key: "ArrowRight" });
-    expect(screen.getByRole("tab", { name: /tokens/i })).toHaveAttribute(
+    const outputTab = screen.getByRole("tab", { name: /output/i });
+    outputTab.focus();
+    fireEvent.keyDown(outputTab, { key: "ArrowRight" });
+    expect(screen.getByRole("tab", { name: /trace/i })).toHaveAttribute(
       "aria-selected",
       "true",
     );
@@ -208,13 +235,13 @@ describe("ForgeCompiler interface", () => {
     const outputTab = screen.getByRole("tab", { name: "Output" });
     await waitFor(() => {
       expect(outputTab).toHaveAttribute("aria-selected", "true");
-      expect(outputTab).toHaveFocus();
+      expect(editor).toHaveFocus();
       expect(
         screen.getByRole("button", { name: /run program/i }),
       ).toBeEnabled();
     });
 
-    expect(fireEvent.keyDown(outputTab, { key: "Enter", metaKey: true })).toBe(
+    expect(fireEvent.keyDown(editor, { key: "Enter", metaKey: true })).toBe(
       false,
     );
     expect(ControlledWorker.instance.messages).toHaveLength(2);
@@ -231,12 +258,83 @@ describe("ForgeCompiler interface", () => {
     });
 
     await waitFor(() => {
-      expect(outputTab).toHaveFocus();
+      expect(editor).toHaveFocus();
       expect(
         screen.getByRole("button", { name: /run program/i }),
       ).toBeEnabled();
     });
     expect(screen.getByText("shortcut")).toBeInTheDocument();
+  });
+
+  it("moves focus into the visible compact inspector after compiling", async () => {
+    class ControlledWorker {
+      constructor() {
+        this.messages = [];
+        this.terminate = () => {};
+        ControlledWorker.instance = this;
+      }
+
+      postMessage(message) {
+        this.messages.push(message);
+      }
+    }
+    vi.stubGlobal("Worker", ControlledWorker);
+    stubCompactViewport();
+
+    render(<ForgeCompiler />);
+    const app = screen.getByRole("main");
+    const workbench = app.querySelector(".workbench");
+    const editor = screen.getByRole("textbox", {
+      name: "FORGE source code",
+    });
+    fireEvent.change(editor, { target: { value: `print("compact");` } });
+    editor.focus();
+    fireEvent.keyDown(editor, { key: "Enter", ctrlKey: true });
+
+    expect(app).not.toHaveAttribute("aria-busy");
+    expect(workbench).toHaveAttribute("aria-busy", "true");
+    expect(
+      screen.getByRole("status", { name: "Lab status" }),
+    ).toHaveTextContent("Processing program");
+
+    const request = ControlledWorker.instance.messages[0];
+    await act(async () => {
+      ControlledWorker.instance.onmessage({
+        data: {
+          id: request.id,
+          ok: true,
+          value: compileSource(request.payload.source),
+        },
+      });
+    });
+
+    await waitFor(() => {
+      expect(screen.getByRole("tab", { name: "Output" })).toHaveFocus();
+      expect(screen.getByRole("button", { name: "Inspector" })).toHaveAttribute(
+        "aria-pressed",
+        "true",
+      );
+      expect(workbench).toHaveAttribute("aria-busy", "false");
+    });
+  });
+
+  it("makes the skip link reveal and focus source on compact screens", async () => {
+    stubCompactViewport();
+    render(<ForgeCompiler />);
+    fireEvent.click(screen.getByRole("button", { name: "Inspector" }));
+    fireEvent.click(
+      screen.getByRole("link", { name: "Skip to source editor" }),
+    );
+
+    await waitFor(() => {
+      expect(
+        screen.getByRole("textbox", { name: "FORGE source code" }),
+      ).toHaveFocus();
+      expect(screen.getByRole("button", { name: "Source" })).toHaveAttribute(
+        "aria-pressed",
+        "true",
+      );
+    });
   });
 
   it("shows Object prototype names as identifiers", async () => {
@@ -265,21 +363,22 @@ describe("ForgeCompiler interface", () => {
 
   it("labels the browser verifier as a self-test rather than CI", async () => {
     render(<ForgeCompiler />);
-    fireEvent.click(screen.getByRole("button", { name: /verify pipeline/i }));
-    const status = screen.getByRole("status", { name: "Verification status" });
+    fireEvent.click(screen.getByRole("button", { name: /run self-test/i }));
+    const status = screen.getByRole("status", { name: "Lab status" });
     await waitFor(() => {
       expect(status).toHaveTextContent("Self-test passed");
     });
     expect(status).toHaveTextContent(
-      "workflow runs the full release gate when hosted on GitHub",
+      "CI runs the differential and release gates",
     );
   });
 
-  it("mounts the verification status live region before any verification result", () => {
+  it("mounts a concise live status before any run", () => {
     render(<ForgeCompiler />);
-    const status = screen.getByRole("status", { name: "Verification status" });
-    expect(status).toBeEmptyDOMElement();
+    const status = screen.getByRole("status", { name: "Lab status" });
+    expect(status).toHaveTextContent("Console standing by");
     expect(status).toHaveAttribute("aria-live", "polite");
+    expect(status).toHaveAttribute("aria-atomic", "true");
   });
 
   it("serializes verification and keyboard compilation requests", async () => {
@@ -297,7 +396,7 @@ describe("ForgeCompiler interface", () => {
     vi.stubGlobal("Worker", ControlledWorker);
 
     render(<ForgeCompiler />);
-    fireEvent.click(screen.getByRole("button", { name: /verify pipeline/i }));
+    fireEvent.click(screen.getByRole("button", { name: /run self-test/i }));
     const editor = screen.getByRole("textbox", {
       name: "FORGE source code",
     });
@@ -341,6 +440,78 @@ describe("ForgeCompiler interface", () => {
     expect(
       screen.getByRole("textbox", { name: "FORGE source code" }),
     ).toHaveValue(`print("saved draft");`);
+  });
+
+  it("persists the selected console era", () => {
+    render(<ForgeCompiler />);
+    const app = screen.getByRole("main");
+    expect(app).toHaveAttribute("data-era", "analog");
+
+    fireEvent.click(screen.getByRole("radio", { name: /Neon.*1984/i }));
+
+    expect(app).toHaveAttribute("data-era", "neon");
+    expect(window.localStorage.getItem("forge-compiler:era")).toBe("neon");
+  });
+
+  it("offers one-step undo after loading an example", () => {
+    render(<ForgeCompiler />);
+    const editor = screen.getByRole("textbox", {
+      name: "FORGE source code",
+    });
+    fireEvent.change(editor, {
+      target: { value: `print("my draft");` },
+    });
+    fireEvent.change(
+      screen.getByRole("combobox", { name: "Load example program" }),
+      { target: { value: "Hello World" } },
+    );
+
+    expect(editor).toHaveValue(`print("Hello, World!");`);
+    fireEvent.click(screen.getByRole("button", { name: /Undo/ }));
+    expect(editor).toHaveValue(`print("my draft");`);
+  });
+
+  it("jumps from a structured diagnostic to its source position", async () => {
+    render(<ForgeCompiler />);
+    const editor = screen.getByRole("textbox", {
+      name: "FORGE source code",
+    });
+    const source = `print("ok");\nprint(missing);`;
+    fireEvent.change(editor, { target: { value: source } });
+    fireEvent.click(screen.getByRole("button", { name: /run program/i }));
+
+    const alert = await screen.findByRole("alert");
+    const jump = within(alert).getByRole("button", { name: /Go to 2:/ });
+    fireEvent.click(jump);
+
+    expect(editor).toHaveFocus();
+    expect(editor.selectionStart).toBe(source.indexOf("missing"));
+    expect(screen.getByRole("button", { name: "Source" })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+  });
+
+  it("pages large inspectors instead of mounting every row", async () => {
+    render(<ForgeCompiler />);
+    const declarations = Array.from(
+      { length: 45 },
+      (_, index) => `let value_${index} = ${index};`,
+    ).join("\n");
+    fireEvent.change(
+      screen.getByRole("textbox", { name: "FORGE source code" }),
+      { target: { value: `${declarations}\nprint(value_44);` } },
+    );
+    fireEvent.click(screen.getByRole("button", { name: /run program/i }));
+    await screen.findByText("forge://stdout");
+    fireEvent.click(screen.getByRole("tab", { name: "Tokens" }));
+
+    const pager = screen.getByRole("navigation", {
+      name: "tokens pagination",
+    });
+    expect(pager).toHaveTextContent("1–120");
+    fireEvent.click(within(pager).getByRole("button", { name: "Next page" }));
+    expect(pager).toHaveTextContent("121–");
   });
 
   it("ignores an in-flight result after the source changes", async () => {

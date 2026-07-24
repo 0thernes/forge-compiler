@@ -8,27 +8,39 @@ import {
 import { renderAst } from "./compiler/ast.js";
 import { EXAMPLES } from "./compiler/examples.js";
 import { formatForPrint, formatValue } from "./compiler/format.js";
+import { EraDial, ERA_PROFILES } from "./components/EraDial.jsx";
+import { InspectorPager } from "./components/InspectorPager.jsx";
 import { useCompilerWorker } from "./useCompilerWorker.js";
 import "./App.css";
 
-const TABS = [
-  { id: "source", label: "Source", marker: "01" },
-  { id: "tokens", label: "Tokens", marker: "02" },
-  { id: "ast", label: "AST", marker: "03" },
-  { id: "assembly", label: "Assembly", marker: "04" },
-  { id: "output", label: "Output", marker: "05" },
-  { id: "trace", label: "Trace", marker: "06" },
+const INSPECTORS = [
+  { id: "tokens", label: "Tokens", marker: "01", hint: "lexical stream" },
+  { id: "ast", label: "AST", marker: "02", hint: "semantic tree" },
+  { id: "assembly", label: "Assembly", marker: "03", hint: "stack program" },
+  { id: "output", label: "Output", marker: "04", hint: "run result" },
+  { id: "trace", label: "Trace", marker: "05", hint: "execution history" },
 ];
 
-const MAX_VISIBLE_TOKENS = 2_000;
-const MAX_VISIBLE_ASSEMBLY_ENTRIES = 5_000;
+const PIPELINE_STAGES = [
+  { id: "lex", label: "Lex", hint: "scan" },
+  { id: "parse", label: "Parse", hint: "shape" },
+  { id: "analyze", label: "Analyze", hint: "prove" },
+  { id: "codegen", label: "Generate", hint: "lower" },
+  { id: "link", label: "Link", hint: "resolve" },
+  { id: "execute", label: "Execute", hint: "run" },
+];
+
+const TOKEN_PAGE_SIZE = 120;
+const ASSEMBLY_PAGE_SIZE = 200;
+const TRACE_PAGE_SIZE = 100;
+const MAX_AST_TOKENS = 2_000;
 const MAX_VISIBLE_GLOBALS = 500;
-const MAX_VISIBLE_TRACE_ENTRIES = 250;
 const MAX_VISIBLE_OUTPUT_CHARACTERS = 100_000;
 const MAX_INSPECTOR_VALUE_CHARACTERS = 2_000;
 const MAX_AST_SOURCE_CHARACTERS = 50_000;
 const DRAFT_KEY = "forge-compiler:draft";
 const DRAFT_VERSION = 1;
+const ERA_KEY = "forge-compiler:era";
 
 function tokenTone(token) {
   if (token.type === T.NUM) return "number";
@@ -111,17 +123,62 @@ function loadDraft() {
   return EXAMPLES.Arrays;
 }
 
+function loadEra() {
+  if (typeof window === "undefined") return "analog";
+  try {
+    const saved = window.localStorage.getItem(ERA_KEY);
+    if (ERA_PROFILES.some((profile) => profile.id === saved)) return saved;
+  } catch {
+    // Appearance persistence is best-effort in restricted browser contexts.
+  }
+  return "analog";
+}
+
+function offsetForPosition(source, position) {
+  if (!position?.line || !position?.column) return 0;
+  const lines = source.split("\n");
+  const preceding = lines
+    .slice(0, Math.max(0, position.line - 1))
+    .reduce((total, line) => total + line.length + 1, 0);
+  return Math.min(source.length, preceding + Math.max(0, position.column - 1));
+}
+
+function isCompactWorkbench() {
+  return (
+    typeof window !== "undefined" &&
+    typeof window.matchMedia === "function" &&
+    window.matchMedia("(max-width: 960px)").matches
+  );
+}
+
+function resetScroll(element) {
+  if (!element) return;
+  element.scrollTop = 0;
+  element.scrollLeft = 0;
+}
+
 export default function ForgeCompiler() {
   const [source, setSource] = useState(loadDraft);
-  const [activeTab, setActiveTab] = useState("source");
+  const [activeInspector, setActiveInspector] = useState("output");
+  const [mobilePane, setMobilePane] = useState("source");
+  const [era, setEra] = useState(loadEra);
   const [compilation, setCompilation] = useState(null);
   const [error, setError] = useState(null);
   const [verification, setVerification] = useState(null);
+  const [previousExample, setPreviousExample] = useState(null);
   const [isCompiling, setIsCompiling] = useState(false);
   const [isVerifying, setIsVerifying] = useState(false);
+  const [tokenPage, setTokenPage] = useState(0);
+  const [assemblyPage, setAssemblyPage] = useState(0);
+  const [tracePage, setTracePage] = useState(0);
+  const [focusRequestRevision, setFocusRequestRevision] = useState(0);
   const textareaRef = useRef(null);
   const pendingSelection = useRef(null);
+  const pendingPaneFocus = useRef(null);
   const tabRefs = useRef(new Map());
+  const workspaceRef = useRef(null);
+  const assemblyListRef = useRef(null);
+  const traceTableRef = useRef(null);
   const sourceRevision = useRef(0);
   const nextCompileRequest = useRef(0);
   const activeCompileRequest = useRef(null);
@@ -139,18 +196,23 @@ export default function ForgeCompiler() {
     [compilation],
   );
   const visibleTokens = useMemo(
-    () => tokens.slice(0, MAX_VISIBLE_TOKENS),
-    [tokens],
-  );
-  const visibleAssembly = useMemo(
     () =>
-      compilation
-        ? compilation.assembly
-            .slice(0, MAX_VISIBLE_ASSEMBLY_ENTRIES)
-            .map((instruction, index) => ({ instruction, index }))
-        : [],
-    [compilation],
+      tokens.slice(
+        tokenPage * TOKEN_PAGE_SIZE,
+        (tokenPage + 1) * TOKEN_PAGE_SIZE,
+      ),
+    [tokenPage, tokens],
   );
+  const visibleAssembly = useMemo(() => {
+    if (!compilation) return [];
+    const start = assemblyPage * ASSEMBLY_PAGE_SIZE;
+    return compilation.assembly
+      .slice(start, start + ASSEMBLY_PAGE_SIZE)
+      .map((instruction, index) => ({
+        instruction,
+        index: start + index,
+      }));
+  }, [assemblyPage, compilation]);
   const globals = useMemo(
     () => (compilation ? Object.entries(compilation.result.globals) : []),
     [compilation],
@@ -159,13 +221,11 @@ export default function ForgeCompiler() {
     () => globals.slice(0, MAX_VISIBLE_GLOBALS),
     [globals],
   );
-  const visibleTrace = useMemo(
-    () =>
-      compilation
-        ? compilation.result.trace.slice(0, MAX_VISIBLE_TRACE_ENTRIES)
-        : [],
-    [compilation],
-  );
+  const visibleTrace = useMemo(() => {
+    if (!compilation) return [];
+    const start = tracePage * TRACE_PAGE_SIZE;
+    return compilation.result.trace.slice(start, start + TRACE_PAGE_SIZE);
+  }, [compilation, tracePage]);
   const outputText = useMemo(
     () =>
       compilation && compilation.result.output.length > 0
@@ -177,7 +237,7 @@ export default function ForgeCompiler() {
   const outputDisplayCapped = outputText.length > MAX_VISIBLE_OUTPUT_CHARACTERS;
   const compiledSourceLength = compilation?.source.length ?? 0;
   const skipAst =
-    tokens.length > MAX_VISIBLE_TOKENS ||
+    tokens.length > MAX_AST_TOKENS ||
     compiledSourceLength > MAX_AST_SOURCE_CHARACTERS;
   const instructionCount = useMemo(
     () =>
@@ -195,10 +255,43 @@ export default function ForgeCompiler() {
     }),
     [source],
   );
+  const selectedEra =
+    ERA_PROFILES.find((profile) => profile.id === era) ?? ERA_PROFILES[0];
+  const runState = isCompiling
+    ? "processing"
+    : isVerifying
+      ? "testing"
+      : error
+        ? "fault"
+        : isStale
+          ? "stale"
+          : compilation
+            ? "ready"
+            : "idle";
 
   const updateSource = useCallback((nextSource) => {
     sourceRevision.current += 1;
     setSource(nextSource);
+  }, []);
+
+  const editSource = useCallback(
+    (nextSource) => {
+      setPreviousExample(null);
+      updateSource(nextSource);
+    },
+    [updateSource],
+  );
+
+  const resetInspectorPages = useCallback(() => {
+    setTokenPage(0);
+    setAssemblyPage(0);
+    setTracePage(0);
+  }, []);
+
+  const requestPaneFocus = useCallback((target, selection = null) => {
+    pendingPaneFocus.current = { target, selection };
+    setMobilePane(target);
+    setFocusRequestRevision((revision) => revision + 1);
   }, []);
 
   const runCompilation = useCallback(async () => {
@@ -226,8 +319,10 @@ export default function ForgeCompiler() {
         return;
       }
       setCompilation(nextCompilation);
-      setActiveTab("output");
-      tabRefs.current.get("output")?.focus();
+      setActiveInspector("output");
+      setMobilePane("inspector");
+      if (isCompactWorkbench()) requestPaneFocus("inspector");
+      resetInspectorPages();
     } catch (nextError) {
       if (
         !mounted.current ||
@@ -238,14 +333,15 @@ export default function ForgeCompiler() {
       }
       setCompilation(null);
       setError(nextError);
-      setActiveTab("source");
+      setMobilePane("source");
+      if (isCompactWorkbench()) requestPaneFocus("source");
     } finally {
       if (mounted.current && activeCompileRequest.current === requestId) {
         activeCompileRequest.current = null;
         setIsCompiling(false);
       }
     }
-  }, [compile, source]);
+  }, [compile, requestPaneFocus, resetInspectorPages, source]);
 
   const runVerification = useCallback(async () => {
     if (
@@ -288,6 +384,30 @@ export default function ForgeCompiler() {
   }, [source]);
 
   useEffect(() => {
+    const request = pendingPaneFocus.current;
+    if (!request || request.target !== mobilePane) return;
+    pendingPaneFocus.current = null;
+
+    if (request.target === "source") {
+      textareaRef.current?.focus();
+      if (request.selection !== null && textareaRef.current) {
+        textareaRef.current.setSelectionRange(
+          request.selection,
+          request.selection,
+        );
+      }
+      return;
+    }
+    tabRefs.current.get(activeInspector)?.focus();
+  }, [activeInspector, focusRequestRevision, mobilePane]);
+
+  useEffect(() => {
+    resetScroll(workspaceRef.current);
+    if (activeInspector === "assembly") resetScroll(assemblyListRef.current);
+    if (activeInspector === "trace") resetScroll(traceTableRef.current);
+  }, [activeInspector, assemblyPage, tokenPage, tracePage]);
+
+  useEffect(() => {
     if (source.length > DEFAULT_LIMITS.maxSourceLength) return undefined;
     const timeout = setTimeout(() => {
       try {
@@ -301,6 +421,14 @@ export default function ForgeCompiler() {
     }, 300);
     return () => clearTimeout(timeout);
   }, [source]);
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(ERA_KEY, era);
+    } catch {
+      // Appearance persistence is best-effort in restricted browser contexts.
+    }
+  }, [era]);
 
   useEffect(() => {
     mounted.current = true;
@@ -323,7 +451,7 @@ export default function ForgeCompiler() {
             start: start + 2,
             end: start + 2,
           };
-          updateSource(
+          editSource(
             `${editor.value.slice(0, start)}  ${editor.value.slice(end)}`,
           );
         } else {
@@ -337,13 +465,13 @@ export default function ForgeCompiler() {
             start: start + 2,
             end: end + addedCharacters,
           };
-          updateSource(
+          editSource(
             `${editor.value.slice(0, lineStart)}${indented}${editor.value.slice(effectiveEnd)}`,
           );
         }
       }
     },
-    [updateSource],
+    [editSource],
   );
 
   const handleAppKeyDown = useCallback(
@@ -360,57 +488,177 @@ export default function ForgeCompiler() {
     (event) => {
       const selected = event.currentTarget.value;
       if (!EXAMPLES[selected]) return;
+      setPreviousExample({ name: selected, source });
       updateSource(EXAMPLES[selected]);
       setCompilation(null);
       setError(null);
       setVerification(null);
-      setActiveTab("source");
+      setMobilePane("source");
+      resetInspectorPages();
     },
-    [updateSource],
+    [resetInspectorPages, source, updateSource],
+  );
+
+  const undoExample = useCallback(() => {
+    if (!previousExample) return;
+    updateSource(previousExample.source);
+    setPreviousExample(null);
+    setCompilation(null);
+    setError(null);
+    setVerification(null);
+    setMobilePane("source");
+  }, [previousExample, updateSource]);
+
+  const focusErrorPosition = useCallback(() => {
+    if (!error?.position || !textareaRef.current) return;
+    const offset = offsetForPosition(source, error.position);
+    requestPaneFocus("source", offset);
+  }, [error, requestPaneFocus, source]);
+
+  const handleSkipToSource = useCallback(
+    (event) => {
+      event.preventDefault();
+      requestPaneFocus("source");
+    },
+    [requestPaneFocus],
   );
 
   const handleTabKeyDown = useCallback(
     (event) => {
-      const currentIndex = TABS.findIndex((tab) => tab.id === activeTab);
+      const currentIndex = INSPECTORS.findIndex(
+        (tab) => tab.id === activeInspector,
+      );
       let nextIndex;
       if (event.key === "ArrowRight") {
-        nextIndex = (currentIndex + 1) % TABS.length;
+        nextIndex = (currentIndex + 1) % INSPECTORS.length;
       } else if (event.key === "ArrowLeft") {
-        nextIndex = (currentIndex - 1 + TABS.length) % TABS.length;
+        nextIndex = (currentIndex - 1 + INSPECTORS.length) % INSPECTORS.length;
       } else if (event.key === "Home") {
         nextIndex = 0;
       } else if (event.key === "End") {
-        nextIndex = TABS.length - 1;
+        nextIndex = INSPECTORS.length - 1;
       } else {
         return;
       }
       event.preventDefault();
-      const nextTab = TABS[nextIndex].id;
-      setActiveTab(nextTab);
+      const nextTab = INSPECTORS[nextIndex].id;
+      setActiveInspector(nextTab);
       tabRefs.current.get(nextTab)?.focus();
     },
-    [activeTab],
+    [activeInspector],
   );
 
+  const labMessage = error
+    ? {
+        tone: "error",
+        label: `${error.phase ?? "compile"} fault`,
+        detail: error.message,
+        glyph: "×",
+      }
+    : verification
+      ? {
+          tone: verification.ok ? "success" : "error",
+          label: verification.ok ? "Self-test passed" : "Self-test failed",
+          detail: verification.ok
+            ? `${verification.exampleCount} examples and ${verification.assertionCount} assertions agreed in ${formatMilliseconds(verification.durationMilliseconds)}. CI runs the differential and release gates.`
+            : `${verification.failures?.length ?? 1} failure(s): ${verification.failures
+                ?.slice(0, 3)
+                .map((failure) => `${failure.name}: ${failure.message}`)
+                .join(" · ")}`,
+          glyph: verification.ok ? "✓" : "×",
+        }
+      : isCompiling
+        ? {
+            tone: "info",
+            label: "Processing program",
+            detail:
+              "The compiler worker is scanning, proving, lowering, and executing this source.",
+            glyph: "↻",
+          }
+        : isVerifying
+          ? {
+              tone: "info",
+              label: "Running self-test",
+              detail:
+                "Examples and embedded language assertions are executing in the compiler worker.",
+              glyph: "↻",
+            }
+          : isStale
+            ? {
+                tone: "warning",
+                label: "Inspector out of date",
+                detail:
+                  "Source changed after the last run. Run again to tune the inspector to this draft.",
+                glyph: "!",
+              }
+            : compilation
+              ? {
+                  tone: "success",
+                  label: "Program ready",
+                  detail: `${instructionCount.toLocaleString("en-US")} instructions completed in ${formatMilliseconds(compilation.timings.total)}.`,
+                  glyph: "✓",
+                }
+              : {
+                  tone: "idle",
+                  label: "Console standing by",
+                  detail:
+                    "Edit the source, choose an inspector, then run the program with Ctrl/⌘ + Enter.",
+                  glyph: "○",
+                };
+
   return (
-    <main className="app-shell" onKeyDown={handleAppKeyDown}>
+    <main
+      className="app-shell"
+      data-era={era}
+      data-run-state={runState}
+      onKeyDown={handleAppKeyDown}
+    >
+      <a
+        className="skip-link"
+        href="#forge-source"
+        onClick={handleSkipToSource}
+      >
+        Skip to source editor
+      </a>
+
+      <div className="equipment-tape" aria-hidden="true">
+        <span>FORGE LABORATORIES</span>
+        <span>COMPUTATION UNIT · MODEL 14</span>
+        <span>
+          {selectedEra.label.toUpperCase()} SERIES · {selectedEra.year}
+        </span>
+      </div>
+
       <header className="app-header">
         <div className="brand-lockup">
           <span className="brand-mark" aria-hidden="true">
-            F
+            <span>F</span>
+            <i />
           </span>
           <div>
             <div className="brand-row">
               <h1>FORGE</h1>
               <span className="version-badge">v{FORGE_VERSION}</span>
             </div>
-            <p>Source-to-stack language laboratory</p>
+            <p>Source-to-stack language laboratory · Built to be opened</p>
           </div>
         </div>
 
+        <div className="lab-readout" data-status={runState}>
+          <span className="lab-readout__pilot" aria-hidden="true" />
+          <span>
+            <small>System signal</small>
+            <strong>{labMessage.label}</strong>
+          </span>
+        </div>
+      </header>
+
+      <section className="control-deck" aria-label="Laboratory controls">
+        <EraDial value={era} onChange={setEra} />
+
         <div className="header-actions">
           <label className="select-field">
-            <span>Example</span>
+            <span>Program cartridge</span>
             <select
               value=""
               onChange={loadExample}
@@ -432,134 +680,121 @@ export default function ForgeCompiler() {
             onClick={() => void runVerification()}
             disabled={isVerifying || isCompiling}
           >
-            {isVerifying ? "Verifying…" : "Verify pipeline"}
+            {isVerifying ? "Testing…" : "Run self-test"}
           </button>
           <button
             className="button button--primary"
             type="button"
             onClick={() => void runCompilation()}
             disabled={isCompiling || isVerifying}
+            aria-keyshortcuts="Control+Enter Meta+Enter"
           >
             {isCompiling ? "Running…" : "Run program"}
-            <kbd>⌘↵</kbd>
+            <kbd>Ctrl/⌘ ↵</kbd>
           </button>
         </div>
-      </header>
+      </section>
 
-      <section className="pipeline-strip" aria-label="Compiler pipeline">
+      <section
+        className="pipeline-strip"
+        data-state={runState}
+        aria-label="Compiler pipeline"
+      >
         <span className="pipeline-strip__label">Pipeline</span>
         <ol>
-          {["Lex", "Parse", "Analyze", "Generate", "Link", "Execute"].map(
-            (stage, index) => (
-              <li key={stage}>
+          {PIPELINE_STAGES.map((stage, index) => (
+            <li
+              key={stage.id}
+              data-stage-state={
+                isCompiling
+                  ? "working"
+                  : compilation && !isStale
+                    ? "complete"
+                    : "idle"
+              }
+            >
+              <span className="pipeline-strip__index">
                 <span>{String(index + 1).padStart(2, "0")}</span>
-                {stage}
-              </li>
-            ),
-          )}
+              </span>
+              <strong>{stage.label}</strong>
+              <small>
+                {compilation
+                  ? formatMilliseconds(compilation.timings[stage.id])
+                  : stage.hint}
+              </small>
+            </li>
+          ))}
         </ol>
-        <span className="pipeline-strip__mode">deterministic VM</span>
+        <span className="pipeline-strip__mode">LEXICAL · FINITE · BOUNDED</span>
       </section>
 
       <div
-        className={
-          verification
-            ? `notice ${verification.ok ? "notice--success" : "notice--error"}`
-            : undefined
-        }
-        role="status"
-        aria-live="polite"
-        aria-label="Verification status"
+        className={`notice notice--${labMessage.tone}`}
+        role={labMessage.tone === "error" ? "alert" : "status"}
+        aria-live={labMessage.tone === "error" ? "assertive" : "polite"}
+        aria-atomic="true"
+        aria-label="Lab status"
       >
-        {verification && (
-          <>
-            <span aria-hidden="true">{verification.ok ? "✓" : "×"}</span>
-            {verification.ok ? (
-              <p>
-                Self-test passed: {verification.exampleCount} examples and{" "}
-                {verification.assertionCount} assertions in{" "}
-                {formatMilliseconds(verification.durationMilliseconds)}. The
-                repository workflow runs the full release gate when hosted on
-                GitHub.
-              </p>
-            ) : (
-              <p>
-                {verification.failures?.length ?? 1} self-test failure(s):{" "}
-                {verification.failures
-                  ?.slice(0, 3)
-                  .map((failure) => `${failure.name}: ${failure.message}`)
-                  .join(" · ")}
-              </p>
-            )}
-          </>
+        <span aria-hidden="true">{labMessage.glyph}</span>
+        <div>
+          <strong>{labMessage.label}</strong>
+          <p>{labMessage.detail}</p>
+        </div>
+        {error?.position && (
+          <button
+            className="notice__action"
+            type="button"
+            onClick={focusErrorPosition}
+          >
+            Go to {error.position.line}:{error.position.column}
+          </button>
         )}
       </div>
-
-      {error && (
-        <div className="notice notice--error" role="alert">
-          <span aria-hidden="true">×</span>
-          <div>
-            <strong>{error.phase ?? "compile"} error</strong>
-            <p>{error.message}</p>
-          </div>
-        </div>
-      )}
 
       <div
-        className={isStale ? "notice notice--warning" : undefined}
-        role="status"
-        aria-live="polite"
-        aria-label="Source freshness"
+        className="mobile-pane-switch"
+        role="group"
+        aria-label="Mobile workbench view"
       >
-        {isStale && (
-          <>
-            <span aria-hidden="true">!</span>
-            <p>Source changed after the last run. Inspector data is stale.</p>
-          </>
-        )}
+        <button
+          type="button"
+          aria-pressed={mobilePane === "source"}
+          onClick={() => setMobilePane("source")}
+        >
+          Source
+        </button>
+        <button
+          type="button"
+          aria-pressed={mobilePane === "inspector"}
+          onClick={() => setMobilePane("inspector")}
+        >
+          Inspector
+        </button>
       </div>
 
-      <nav
-        className="tab-bar"
-        role="tablist"
-        aria-label="Compiler inspectors"
-        onKeyDown={handleTabKeyDown}
+      <div
+        aria-busy={isCompiling}
+        className="workbench"
+        data-mobile-pane={mobilePane}
       >
-        {TABS.map((tab) => (
-          <button
-            key={tab.id}
-            ref={(element) => {
-              if (element) tabRefs.current.set(tab.id, element);
-            }}
-            id={`tab-${tab.id}`}
-            role="tab"
-            type="button"
-            aria-selected={activeTab === tab.id}
-            aria-controls={`panel-${tab.id}`}
-            tabIndex={activeTab === tab.id ? 0 : -1}
-            onClick={() => setActiveTab(tab.id)}
-          >
-            <span aria-hidden="true">{tab.marker}</span>
-            {tab.label}
-          </button>
-        ))}
-      </nav>
-
-      <section
-        className="workspace"
-        id={`panel-${activeTab}`}
-        role="tabpanel"
-        aria-labelledby={`tab-${activeTab}`}
-        tabIndex={0}
-      >
-        {activeTab === "source" && (
+        <section className="source-pane" aria-labelledby="source-heading">
+          <h2 className="sr-only" id="source-heading">
+            Source program
+          </h2>
           <div className="editor-panel">
             <div className="panel-toolbar">
-              <span>main.forge</span>
-              <div>
+              <span className="panel-toolbar__file">main.forge</span>
+              <div className="panel-toolbar__stats">
                 <span>{sourceStats.lines} lines</span>
                 <span>{sourceStats.characters} chars</span>
-                <span>UTF-16</span>
+                <span>
+                  {isStale ? "Changed since run" : "Autosaved locally"}
+                </span>
+                {previousExample && (
+                  <button type="button" onClick={undoExample}>
+                    Undo “{previousExample.name}”
+                  </button>
+                )}
               </div>
             </div>
             <label className="sr-only" htmlFor="forge-source">
@@ -569,7 +804,7 @@ export default function ForgeCompiler() {
               id="forge-source"
               ref={textareaRef}
               value={source}
-              onChange={(event) => updateSource(event.target.value)}
+              onChange={(event) => editSource(event.target.value)}
               onKeyDown={handleEditorKeyDown}
               maxLength={DEFAULT_LIMITS.maxSourceLength}
               spellCheck={false}
@@ -583,313 +818,367 @@ export default function ForgeCompiler() {
               <span>Ctrl/⌘ + Enter runs</span>
             </div>
           </div>
-        )}
+        </section>
 
-        {activeTab === "tokens" &&
-          (compilation ? (
-            <div className="inspector-panel">
-              <div className="panel-heading">
-                <div>
-                  <span className="eyebrow">Lexical stream</span>
-                  <h2>{tokens.length} tokens</h2>
-                </div>
-                <span>{formatMilliseconds(compilation.timings.lex)}</span>
-              </div>
-              <div className="token-grid">
-                {visibleTokens.map((token, index) => (
-                  <div
-                    className="token-chip"
-                    data-tone={tokenTone(token)}
-                    key={`${token.position.line}:${token.position.column}:${index}`}
-                  >
-                    <code>{displayTokenValue(token)}</code>
-                    <span>{token.type}</span>
-                    <small>
-                      {token.position.line}:{token.position.column}
-                    </small>
-                  </div>
-                ))}
-              </div>
-              {tokens.length > MAX_VISIBLE_TOKENS && (
-                <InspectorLimit
-                  artifact="Token"
-                  count={tokens.length}
-                  limit={MAX_VISIBLE_TOKENS}
-                />
-              )}
-            </div>
-          ) : (
-            <TabPlaceholder />
-          ))}
-
-        {activeTab === "ast" &&
-          (compilation ? (
-            <div className="inspector-panel">
-              <div className="panel-heading">
-                <div>
-                  <span className="eyebrow">Semantic tree</span>
-                  <h2>Abstract syntax tree</h2>
-                </div>
-                <span>
-                  {compilation.analysis.variables} vars ·{" "}
-                  {compilation.analysis.functions} functions ·{" "}
-                  {compilation.analysis.calls} calls
-                </span>
-              </div>
-              {skipAst ? (
-                <InspectorLimit
-                  artifact="AST"
-                  count={
-                    tokens.length > MAX_VISIBLE_TOKENS
-                      ? tokens.length
-                      : compiledSourceLength
-                  }
-                  limit={
-                    tokens.length > MAX_VISIBLE_TOKENS
-                      ? MAX_VISIBLE_TOKENS
-                      : MAX_AST_SOURCE_CHARACTERS
-                  }
-                  unit={
-                    tokens.length > MAX_VISIBLE_TOKENS
-                      ? "tokens"
-                      : "source characters"
-                  }
-                  skipped
-                />
-              ) : (
-                <pre
-                  className="code-block code-block--cyan"
-                  role="region"
-                  aria-label="Abstract syntax tree"
-                  tabIndex={0}
-                >
-                  {renderAst(compilation.ast)}
-                </pre>
-              )}
-            </div>
-          ) : (
-            <TabPlaceholder />
-          ))}
-
-        {activeTab === "assembly" &&
-          (compilation ? (
-            <div className="inspector-panel">
-              <div className="panel-heading">
-                <div>
-                  <span className="eyebrow">Stack machine</span>
-                  <h2>{instructionCount} instructions</h2>
-                </div>
-                <span>
-                  {formatMilliseconds(
-                    compilation.timings.codegen + compilation.timings.link,
-                  )}{" "}
-                  generate + link
-                </span>
-              </div>
-              <div
-                className="assembly-list"
-                role="table"
-                aria-label="Generated assembly"
-                tabIndex={0}
+        <section className="inspector-shell" aria-label="Compiler inspector">
+          <nav
+            className="tab-bar"
+            role="tablist"
+            aria-label="Compiler inspectors"
+            onKeyDown={handleTabKeyDown}
+          >
+            {INSPECTORS.map((tab) => (
+              <button
+                key={tab.id}
+                ref={(element) => {
+                  if (element) tabRefs.current.set(tab.id, element);
+                }}
+                id={`tab-${tab.id}`}
+                role="tab"
+                type="button"
+                aria-label={tab.label}
+                aria-selected={activeInspector === tab.id}
+                aria-controls={`panel-${tab.id}`}
+                tabIndex={activeInspector === tab.id ? 0 : -1}
+                onClick={() => {
+                  setActiveInspector(tab.id);
+                  setMobilePane("inspector");
+                }}
               >
-                <div className="sr-only" role="rowgroup">
-                  <div role="row">
-                    <span role="columnheader">Address</span>
-                    <span role="columnheader">Opcode</span>
-                    <span role="columnheader">Argument</span>
-                  </div>
-                </div>
-                <div role="rowgroup">
-                  {visibleAssembly.map(({ instruction, index }) =>
-                    instruction.opcode === "LABEL" ? (
-                      <div
-                        className="assembly-label"
-                        role="row"
-                        key={`${instruction.argument}:${index}`}
-                      >
-                        <span role="cell" aria-label="No address">
-                          —
-                        </span>
-                        <strong role="cell">LABEL</strong>
-                        <code role="cell">{instruction.argument}:</code>
-                      </div>
-                    ) : (
-                      <div className="assembly-row" role="row" key={index}>
-                        <span role="cell">
-                          {String(
-                            compilation.instructionAddresses[index],
-                          ).padStart(4, "0")}
-                        </span>
-                        <strong role="cell">{instruction.opcode}</strong>
-                        <code role="cell">
-                          {displayInstructionArgument(instruction)}
-                        </code>
-                      </div>
-                    ),
-                  )}
-                </div>
-              </div>
-              {compilation.assembly.length > MAX_VISIBLE_ASSEMBLY_ENTRIES && (
-                <InspectorLimit
-                  artifact="Assembly"
-                  count={compilation.assembly.length}
-                  limit={MAX_VISIBLE_ASSEMBLY_ENTRIES}
-                />
-              )}
-            </div>
-          ) : (
-            <TabPlaceholder />
-          ))}
+                <span className="tab-bar__marker" aria-hidden="true">
+                  {tab.marker}
+                </span>
+                <span className="tab-bar__copy">
+                  <strong>{tab.label}</strong>
+                  <small>{tab.hint}</small>
+                </span>
+              </button>
+            ))}
+          </nav>
 
-        {activeTab === "output" &&
-          (compilation ? (
-            <div className="inspector-panel">
-              <div className="metric-grid">
-                <div>
-                  <span>Termination</span>
-                  <strong data-status={compilation.result.status}>
-                    {compilation.result.status}
-                  </strong>
-                </div>
-                <div>
-                  <span>VM steps</span>
-                  <strong>
-                    {compilation.result.steps.toLocaleString("en-US")}
-                  </strong>
-                </div>
-                <div>
-                  <span>Output</span>
-                  <strong>{compilation.result.output.length} records</strong>
-                </div>
-                <div>
-                  <span>Total time</span>
-                  <strong>
-                    {formatMilliseconds(compilation.timings.total)}
-                  </strong>
-                </div>
-              </div>
-              <div className="terminal-card">
-                <div className="terminal-card__bar">
-                  <span>
-                    <i />
-                    <i />
-                    <i />
-                  </span>
-                  forge://stdout
-                </div>
-                <pre role="region" aria-label="Program output" tabIndex={0}>
-                  {visibleOutput}
-                </pre>
-              </div>
-              {outputDisplayCapped && (
-                <InspectorLimit
-                  artifact="Output"
-                  count={outputText.length}
-                  limit={MAX_VISIBLE_OUTPUT_CHARACTERS}
-                  unit="characters"
-                />
-              )}
-              {globals.length > 0 && (
-                <div className="globals-card">
-                  <span className="eyebrow">Final global state</span>
-                  <dl>
-                    {visibleGlobals.map(([name, value]) => (
-                      <div key={name}>
-                        <dt>{name}</dt>
-                        <dd>
-                          {formatValue(value, {
-                            maxCharacters: MAX_INSPECTOR_VALUE_CHARACTERS,
-                          })}
-                        </dd>
+          <section
+            className="workspace"
+            id={`panel-${activeInspector}`}
+            ref={workspaceRef}
+            role="tabpanel"
+            aria-labelledby={`tab-${activeInspector}`}
+            aria-busy={isCompiling}
+          >
+            {activeInspector === "tokens" &&
+              (compilation ? (
+                <div className="inspector-panel">
+                  <div className="panel-heading">
+                    <div>
+                      <span className="eyebrow">Lexical stream</span>
+                      <h2>{tokens.length} tokens</h2>
+                    </div>
+                    <span>{formatMilliseconds(compilation.timings.lex)}</span>
+                  </div>
+                  <div className="token-grid">
+                    {visibleTokens.map((token, index) => (
+                      <div
+                        className="token-chip"
+                        data-tone={tokenTone(token)}
+                        key={`${token.position.line}:${token.position.column}:${tokenPage * TOKEN_PAGE_SIZE + index}`}
+                      >
+                        <code>{displayTokenValue(token)}</code>
+                        <span>{token.type}</span>
+                        <small>
+                          {token.position.line}:{token.position.column}
+                        </small>
                       </div>
                     ))}
-                  </dl>
-                  {globals.length > MAX_VISIBLE_GLOBALS && (
+                  </div>
+                  <InspectorPager
+                    count={tokens.length}
+                    page={tokenPage}
+                    pageSize={TOKEN_PAGE_SIZE}
+                    onPageChange={setTokenPage}
+                    noun="tokens"
+                  />
+                </div>
+              ) : (
+                <TabPlaceholder />
+              ))}
+
+            {activeInspector === "ast" &&
+              (compilation ? (
+                <div className="inspector-panel">
+                  <div className="panel-heading">
+                    <div>
+                      <span className="eyebrow">Semantic tree</span>
+                      <h2>Abstract syntax tree</h2>
+                    </div>
+                    <span>
+                      {compilation.analysis.variables} vars ·{" "}
+                      {compilation.analysis.functions} functions ·{" "}
+                      {compilation.analysis.calls} calls
+                    </span>
+                  </div>
+                  {skipAst ? (
                     <InspectorLimit
-                      artifact="Global"
-                      count={globals.length}
-                      limit={MAX_VISIBLE_GLOBALS}
+                      artifact="AST"
+                      count={
+                        tokens.length > MAX_AST_TOKENS
+                          ? tokens.length
+                          : compiledSourceLength
+                      }
+                      limit={
+                        tokens.length > MAX_AST_TOKENS
+                          ? MAX_AST_TOKENS
+                          : MAX_AST_SOURCE_CHARACTERS
+                      }
+                      unit={
+                        tokens.length > MAX_AST_TOKENS
+                          ? "tokens"
+                          : "source characters"
+                      }
+                      skipped
+                    />
+                  ) : (
+                    <pre
+                      className="code-block code-block--cyan"
+                      role="region"
+                      aria-label="Abstract syntax tree"
+                      tabIndex={0}
+                    >
+                      {renderAst(compilation.ast)}
+                    </pre>
+                  )}
+                </div>
+              ) : (
+                <TabPlaceholder />
+              ))}
+
+            {activeInspector === "assembly" &&
+              (compilation ? (
+                <div className="inspector-panel">
+                  <div className="panel-heading">
+                    <div>
+                      <span className="eyebrow">Stack machine</span>
+                      <h2>{instructionCount} instructions</h2>
+                    </div>
+                    <span>
+                      {formatMilliseconds(
+                        compilation.timings.codegen + compilation.timings.link,
+                      )}{" "}
+                      generate + link
+                    </span>
+                  </div>
+                  <div
+                    className="assembly-list"
+                    ref={assemblyListRef}
+                    role="table"
+                    aria-label="Generated assembly"
+                    tabIndex={0}
+                  >
+                    <div className="sr-only" role="rowgroup">
+                      <div role="row">
+                        <span role="columnheader">Address</span>
+                        <span role="columnheader">Opcode</span>
+                        <span role="columnheader">Argument</span>
+                      </div>
+                    </div>
+                    <div role="rowgroup">
+                      {visibleAssembly.map(({ instruction, index }) =>
+                        instruction.opcode === "LABEL" ? (
+                          <div
+                            className="assembly-label"
+                            role="row"
+                            key={`${instruction.argument}:${index}`}
+                          >
+                            <span role="cell" aria-label="No address">
+                              —
+                            </span>
+                            <strong role="cell">LABEL</strong>
+                            <code role="cell">{instruction.argument}:</code>
+                          </div>
+                        ) : (
+                          <div className="assembly-row" role="row" key={index}>
+                            <span role="cell">
+                              {String(
+                                compilation.instructionAddresses[index],
+                              ).padStart(4, "0")}
+                            </span>
+                            <strong role="cell">{instruction.opcode}</strong>
+                            <code role="cell">
+                              {displayInstructionArgument(instruction)}
+                            </code>
+                          </div>
+                        ),
+                      )}
+                    </div>
+                  </div>
+                  <InspectorPager
+                    count={compilation.assembly.length}
+                    page={assemblyPage}
+                    pageSize={ASSEMBLY_PAGE_SIZE}
+                    onPageChange={setAssemblyPage}
+                    noun="assembly rows"
+                  />
+                </div>
+              ) : (
+                <TabPlaceholder />
+              ))}
+
+            {activeInspector === "output" &&
+              (compilation ? (
+                <div className="inspector-panel">
+                  <div className="metric-grid">
+                    <div>
+                      <span>Termination</span>
+                      <strong data-status={compilation.result.status}>
+                        {compilation.result.status}
+                      </strong>
+                    </div>
+                    <div>
+                      <span>VM steps</span>
+                      <strong>
+                        {compilation.result.steps.toLocaleString("en-US")}
+                      </strong>
+                    </div>
+                    <div>
+                      <span>Output</span>
+                      <strong>
+                        {compilation.result.output.length} records
+                      </strong>
+                    </div>
+                    <div>
+                      <span>Total time</span>
+                      <strong>
+                        {formatMilliseconds(compilation.timings.total)}
+                      </strong>
+                    </div>
+                  </div>
+                  <div className="terminal-card">
+                    <div className="terminal-card__bar">
+                      <span className="output-pilot">
+                        <i aria-hidden="true" />
+                        OUTPUT / {compilation.result.status.toUpperCase()}
+                      </span>
+                      <span>forge://stdout</span>
+                    </div>
+                    <pre role="region" aria-label="Program output" tabIndex={0}>
+                      {visibleOutput}
+                    </pre>
+                  </div>
+                  {outputDisplayCapped && (
+                    <InspectorLimit
+                      artifact="Output"
+                      count={outputText.length}
+                      limit={MAX_VISIBLE_OUTPUT_CHARACTERS}
+                      unit="characters"
                     />
                   )}
-                </div>
-              )}
-            </div>
-          ) : (
-            <TabPlaceholder />
-          ))}
-
-        {activeTab === "trace" &&
-          (compilation ? (
-            <div className="inspector-panel">
-              <div className="panel-heading">
-                <div>
-                  <span className="eyebrow">Execution history</span>
-                  <h2>{compilation.result.trace.length} captured operations</h2>
-                </div>
-                <span>
-                  {compilation.result.traceOverflow
-                    ? `capped from ${compilation.result.steps}`
-                    : "complete trace"}
-                </span>
-              </div>
-              <div
-                className="table-scroll"
-                role="region"
-                aria-label="Execution trace"
-                tabIndex={0}
-              >
-                <table>
-                  <thead>
-                    <tr>
-                      <th scope="col">PC</th>
-                      <th scope="col">Opcode</th>
-                      <th scope="col">Argument</th>
-                      <th scope="col">Stack after</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {visibleTrace.map((entry, index) => (
-                      <tr key={`${entry.programCounter}:${index}`}>
-                        <td>{entry.programCounter}</td>
-                        <td>{entry.opcode}</td>
-                        <td>
-                          {entry.argument === undefined
-                            ? "—"
-                            : formatForPrint(String(entry.argument), {
+                  {globals.length > 0 && (
+                    <div className="globals-card">
+                      <span className="eyebrow">Final global state</span>
+                      <dl>
+                        {visibleGlobals.map(([name, value]) => (
+                          <div key={name}>
+                            <dt>{name}</dt>
+                            <dd>
+                              {formatValue(value, {
                                 maxCharacters: MAX_INSPECTOR_VALUE_CHARACTERS,
                               })}
-                        </td>
-                        <td>
-                          {formatValue(entry.stackAfter, {
-                            maxCharacters: MAX_INSPECTOR_VALUE_CHARACTERS,
-                          })}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-              {compilation.result.trace.length > MAX_VISIBLE_TRACE_ENTRIES && (
-                <InspectorLimit
-                  artifact="Trace"
-                  count={compilation.result.trace.length}
-                  limit={MAX_VISIBLE_TRACE_ENTRIES}
-                />
-              )}
-            </div>
-          ) : (
-            <TabPlaceholder />
+                            </dd>
+                          </div>
+                        ))}
+                      </dl>
+                      {globals.length > MAX_VISIBLE_GLOBALS && (
+                        <InspectorLimit
+                          artifact="Global"
+                          count={globals.length}
+                          limit={MAX_VISIBLE_GLOBALS}
+                        />
+                      )}
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <TabPlaceholder />
+              ))}
+
+            {activeInspector === "trace" &&
+              (compilation ? (
+                <div className="inspector-panel">
+                  <div className="panel-heading">
+                    <div>
+                      <span className="eyebrow">Execution history</span>
+                      <h2>
+                        {compilation.result.trace.length} captured operations
+                      </h2>
+                    </div>
+                    <span>
+                      {compilation.result.traceOverflow
+                        ? `capped from ${compilation.result.steps}`
+                        : "complete trace"}
+                    </span>
+                  </div>
+                  <div
+                    className="table-scroll"
+                    ref={traceTableRef}
+                    role="region"
+                    aria-label="Execution trace"
+                    tabIndex={0}
+                  >
+                    <table>
+                      <thead>
+                        <tr>
+                          <th scope="col">PC</th>
+                          <th scope="col">Opcode</th>
+                          <th scope="col">Argument</th>
+                          <th scope="col">Stack after</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {visibleTrace.map((entry, index) => (
+                          <tr
+                            key={`${entry.programCounter}:${tracePage * TRACE_PAGE_SIZE + index}`}
+                          >
+                            <td>{entry.programCounter}</td>
+                            <td>{entry.opcode}</td>
+                            <td>
+                              {entry.argument === undefined
+                                ? "—"
+                                : formatForPrint(String(entry.argument), {
+                                    maxCharacters:
+                                      MAX_INSPECTOR_VALUE_CHARACTERS,
+                                  })}
+                            </td>
+                            <td>
+                              {formatValue(entry.stackAfter, {
+                                maxCharacters: MAX_INSPECTOR_VALUE_CHARACTERS,
+                              })}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                  <InspectorPager
+                    count={compilation.result.trace.length}
+                    page={tracePage}
+                    pageSize={TRACE_PAGE_SIZE}
+                    onPageChange={setTracePage}
+                    noun="trace entries"
+                  />
+                </div>
+              ) : (
+                <TabPlaceholder />
+              ))}
+          </section>
+          {INSPECTORS.filter((tab) => tab.id !== activeInspector).map((tab) => (
+            <section
+              key={tab.id}
+              id={`panel-${tab.id}`}
+              role="tabpanel"
+              aria-labelledby={`tab-${tab.id}`}
+              hidden
+            />
           ))}
-      </section>
-      {TABS.filter((tab) => tab.id !== activeTab).map((tab) => (
-        <section
-          key={tab.id}
-          id={`panel-${tab.id}`}
-          role="tabpanel"
-          aria-labelledby={`tab-${tab.id}`}
-          hidden
-        />
-      ))}
+        </section>
+      </div>
 
       <footer className="app-footer">
         <div>
@@ -897,6 +1186,7 @@ export default function ForgeCompiler() {
           <span>Finite-number VM</span>
           <span>Lexical scope</span>
           <span>Bounded execution</span>
+          <span>Tree-walk VM oracle</span>
         </div>
         <a
           href="https://github.com/0thernes/forge-compiler"
