@@ -25,8 +25,6 @@ exports[`bundled examples > Bubble Sort runs clean and matches golden output 1`]
 sorted:   [7, 11, 12, 25, 38, 42, 64, 90]"
 `;
 
-exports[`bundled examples > Closures runs clean and matches golden output 1`] = `"bounce(0, 10) = 0"`;
-
 exports[`bundled examples > Collatz runs clean and matches golden output 1`] = `
 "collatz(1) = 0 steps
 collatz(2) = 1 steps
@@ -117,6 +115,13 @@ lcm(7, 5) = 35"
 
 exports[`bundled examples > Hello World runs clean and matches golden output 1`] = `"Hello, World!"`;
 
+exports[`bundled examples > Lexical Scope runs clean and matches golden output 1`] = `
+"global from caller = 10
+captured counter = 42"
+`;
+
+exports[`bundled examples > Nested Functions runs clean and matches golden output 1`] = `"bounce(0, 10) = 0"`;
+
 exports[`bundled examples > Palindrome runs clean and matches golden output 1`] = `
 "racecar: 1
 madam: 1
@@ -178,7 +183,7 @@ exports[`bundled examples > Type Safety runs clean and matches golden output 1`]
 "type_of(42) = number
 type_of("hi") = string
 type_of(true) = number
-type_of([1,2]) = array
+type_of([1, 2]) = array
 
 score: 42
 1 == 1: 1
@@ -186,5 +191,5 @@ score: 42
 true == 1: 1
 
 [1,2] == [1,2]: 0
-a == c (same ref): 1"
+a == c (same reference): 1"
 `;

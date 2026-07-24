@@ -1,13 +1,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
+  DEFAULT_LIMITS,
   FORGE_VERSION,
   KEYWORDS,
   T,
-  escapeForDisplay,
-  formatValue,
-  renderAst,
-} from "./compiler/index.js";
+} from "./compiler/constants.js";
+import { renderAst } from "./compiler/ast.js";
 import { EXAMPLES } from "./compiler/examples.js";
+import { formatForPrint, formatValue } from "./compiler/format.js";
 import { useCompilerWorker } from "./useCompilerWorker.js";
 import "./App.css";
 
@@ -22,6 +22,13 @@ const TABS = [
 
 const MAX_VISIBLE_TOKENS = 2_000;
 const MAX_VISIBLE_ASSEMBLY_ENTRIES = 5_000;
+const MAX_VISIBLE_GLOBALS = 500;
+const MAX_VISIBLE_TRACE_ENTRIES = 250;
+const MAX_VISIBLE_OUTPUT_CHARACTERS = 100_000;
+const MAX_INSPECTOR_VALUE_CHARACTERS = 2_000;
+const MAX_AST_SOURCE_CHARACTERS = 50_000;
+const DRAFT_KEY = "forge-compiler:draft";
+const DRAFT_VERSION = 1;
 
 function tokenTone(token) {
   if (token.type === T.NUM) return "number";
@@ -34,9 +41,20 @@ function tokenTone(token) {
 function displayInstructionArgument(instruction) {
   if (instruction.argument === undefined) return "";
   if (instruction.opcode === "PUSH_STRING") {
-    return `"${escapeForDisplay(instruction.argument)}"`;
+    return formatValue(instruction.argument, {
+      maxCharacters: MAX_INSPECTOR_VALUE_CHARACTERS,
+    });
   }
-  return String(instruction.argument);
+  return formatForPrint(String(instruction.argument), {
+    maxCharacters: MAX_INSPECTOR_VALUE_CHARACTERS,
+  });
+}
+
+function displayTokenValue(token) {
+  const formatter = token.type === T.STR ? formatValue : formatForPrint;
+  return formatter(token.type === T.STR ? token.value : String(token.value), {
+    maxCharacters: MAX_INSPECTOR_VALUE_CHARACTERS,
+  });
 }
 
 function formatMilliseconds(value) {
@@ -56,22 +74,45 @@ function TabPlaceholder() {
   );
 }
 
-function InspectorLimit({ artifact, count, limit, skipped = false }) {
+function InspectorLimit({
+  artifact,
+  count,
+  limit,
+  skipped = false,
+  unit = "entries",
+}) {
   return (
     <div className="inspector-limit" role="status">
       <strong>{artifact} display capped</strong>
       <p>
         {skipped
-          ? `Rendering was skipped because the program has ${count.toLocaleString("en-US")} tokens; the inspector limit is ${limit.toLocaleString("en-US")}.`
-          : `Showing the first ${limit.toLocaleString("en-US")} of ${count.toLocaleString("en-US")} entries to keep the interface responsive.`}{" "}
+          ? `Rendering was skipped because the program has ${count.toLocaleString("en-US")} ${unit}; the inspector limit is ${limit.toLocaleString("en-US")}.`
+          : `Showing the first ${limit.toLocaleString("en-US")} of ${count.toLocaleString("en-US")} ${unit} to keep the interface responsive.`}{" "}
         Compilation used the complete program.
       </p>
     </div>
   );
 }
 
+function loadDraft() {
+  if (typeof window === "undefined") return EXAMPLES.Arrays;
+  try {
+    const saved = JSON.parse(window.localStorage.getItem(DRAFT_KEY));
+    if (
+      saved?.version === DRAFT_VERSION &&
+      typeof saved.source === "string" &&
+      saved.source.length <= DEFAULT_LIMITS.maxSourceLength
+    ) {
+      return saved.source;
+    }
+  } catch {
+    // Storage may be unavailable or contain data from an older format.
+  }
+  return EXAMPLES.Arrays;
+}
+
 export default function ForgeCompiler() {
-  const [source, setSource] = useState(EXAMPLES.Arrays);
+  const [source, setSource] = useState(loadDraft);
   const [activeTab, setActiveTab] = useState("source");
   const [compilation, setCompilation] = useState(null);
   const [error, setError] = useState(null);
@@ -79,8 +120,14 @@ export default function ForgeCompiler() {
   const [isCompiling, setIsCompiling] = useState(false);
   const [isVerifying, setIsVerifying] = useState(false);
   const textareaRef = useRef(null);
-  const pendingCursor = useRef(null);
+  const pendingSelection = useRef(null);
   const tabRefs = useRef(new Map());
+  const sourceRevision = useRef(0);
+  const nextCompileRequest = useRef(0);
+  const activeCompileRequest = useRef(null);
+  const nextVerificationRequest = useRef(0);
+  const activeVerificationRequest = useRef(null);
+  const mounted = useRef(true);
   const { compile, verify } = useCompilerWorker();
 
   const isStale = Boolean(compilation && compilation.source !== source);
@@ -104,6 +151,34 @@ export default function ForgeCompiler() {
         : [],
     [compilation],
   );
+  const globals = useMemo(
+    () => (compilation ? Object.entries(compilation.result.globals) : []),
+    [compilation],
+  );
+  const visibleGlobals = useMemo(
+    () => globals.slice(0, MAX_VISIBLE_GLOBALS),
+    [globals],
+  );
+  const visibleTrace = useMemo(
+    () =>
+      compilation
+        ? compilation.result.trace.slice(0, MAX_VISIBLE_TRACE_ENTRIES)
+        : [],
+    [compilation],
+  );
+  const outputText = useMemo(
+    () =>
+      compilation && compilation.result.output.length > 0
+        ? compilation.result.output.join("\n")
+        : "(program produced no output)",
+    [compilation],
+  );
+  const visibleOutput = outputText.slice(0, MAX_VISIBLE_OUTPUT_CHARACTERS);
+  const outputDisplayCapped = outputText.length > MAX_VISIBLE_OUTPUT_CHARACTERS;
+  const compiledSourceLength = compilation?.source.length ?? 0;
+  const skipAst =
+    tokens.length > MAX_VISIBLE_TOKENS ||
+    compiledSourceLength > MAX_AST_SOURCE_CHARACTERS;
   const instructionCount = useMemo(
     () =>
       compilation
@@ -121,75 +196,169 @@ export default function ForgeCompiler() {
     [source],
   );
 
+  const updateSource = useCallback((nextSource) => {
+    sourceRevision.current += 1;
+    setSource(nextSource);
+  }, []);
+
   const runCompilation = useCallback(async () => {
+    if (
+      activeCompileRequest.current !== null ||
+      activeVerificationRequest.current !== null
+    ) {
+      return;
+    }
+    const requestId = nextCompileRequest.current + 1;
+    nextCompileRequest.current = requestId;
+    activeCompileRequest.current = requestId;
+    const revision = sourceRevision.current;
+    const sourceSnapshot = source;
     setIsCompiling(true);
     setError(null);
     setVerification(null);
     try {
-      const nextCompilation = await compile(source);
+      const nextCompilation = await compile(sourceSnapshot);
+      if (
+        !mounted.current ||
+        activeCompileRequest.current !== requestId ||
+        sourceRevision.current !== revision
+      ) {
+        return;
+      }
       setCompilation(nextCompilation);
       setActiveTab("output");
     } catch (nextError) {
+      if (
+        !mounted.current ||
+        activeCompileRequest.current !== requestId ||
+        sourceRevision.current !== revision
+      ) {
+        return;
+      }
       setCompilation(null);
       setError(nextError);
       setActiveTab("source");
     } finally {
-      setIsCompiling(false);
+      if (mounted.current && activeCompileRequest.current === requestId) {
+        activeCompileRequest.current = null;
+        setIsCompiling(false);
+      }
     }
   }, [compile, source]);
 
   const runVerification = useCallback(async () => {
+    if (
+      activeVerificationRequest.current !== null ||
+      activeCompileRequest.current !== null
+    ) {
+      return;
+    }
+    const requestId = nextVerificationRequest.current + 1;
+    nextVerificationRequest.current = requestId;
+    activeVerificationRequest.current = requestId;
     setIsVerifying(true);
     setVerification(null);
     try {
-      setVerification(await verify());
+      const report = await verify();
+      if (mounted.current && activeVerificationRequest.current === requestId) {
+        setVerification(report);
+      }
     } catch (nextError) {
-      setVerification({
-        ok: false,
-        failures: [{ name: "Verifier", message: nextError.message }],
-      });
+      if (mounted.current && activeVerificationRequest.current === requestId) {
+        setVerification({
+          ok: false,
+          failures: [{ name: "Verifier", message: nextError.message }],
+        });
+      }
     } finally {
-      setIsVerifying(false);
+      if (mounted.current && activeVerificationRequest.current === requestId) {
+        activeVerificationRequest.current = null;
+        setIsVerifying(false);
+      }
     }
   }, [verify]);
 
   useEffect(() => {
-    if (textareaRef.current && pendingCursor.current !== null) {
-      const cursor = pendingCursor.current;
-      pendingCursor.current = null;
-      textareaRef.current.setSelectionRange(cursor, cursor);
+    if (textareaRef.current && pendingSelection.current !== null) {
+      const selection = pendingSelection.current;
+      pendingSelection.current = null;
+      textareaRef.current.setSelectionRange(selection.start, selection.end);
     }
   }, [source]);
 
+  useEffect(() => {
+    if (source.length > DEFAULT_LIMITS.maxSourceLength) return undefined;
+    const timeout = setTimeout(() => {
+      try {
+        window.localStorage.setItem(
+          DRAFT_KEY,
+          JSON.stringify({ version: DRAFT_VERSION, source }),
+        );
+      } catch {
+        // Draft persistence is best-effort in restricted browser contexts.
+      }
+    }, 300);
+    return () => clearTimeout(timeout);
+  }, [source]);
+
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+      activeCompileRequest.current = null;
+      activeVerificationRequest.current = null;
+    };
+  }, []);
+
   const handleEditorKeyDown = useCallback(
     (event) => {
-      if (event.key === "Tab") {
+      if (event.key === "Tab" && !event.shiftKey) {
         event.preventDefault();
         const editor = event.currentTarget;
         const start = editor.selectionStart;
         const end = editor.selectionEnd;
-        pendingCursor.current = start + 2;
-        setSource(
-          `${editor.value.slice(0, start)}  ${editor.value.slice(end)}`,
-        );
+        if (start === end) {
+          pendingSelection.current = {
+            start: start + 2,
+            end: start + 2,
+          };
+          updateSource(
+            `${editor.value.slice(0, start)}  ${editor.value.slice(end)}`,
+          );
+        } else {
+          const lineStart = editor.value.lastIndexOf("\n", start - 1) + 1;
+          const selected = editor.value.slice(lineStart, end);
+          const indented = selected.replace(/^/gm, "  ");
+          const addedCharacters = indented.length - selected.length;
+          pendingSelection.current = {
+            start: start + 2,
+            end: end + addedCharacters,
+          };
+          updateSource(
+            `${editor.value.slice(0, lineStart)}${indented}${editor.value.slice(end)}`,
+          );
+        }
       }
       if ((event.ctrlKey || event.metaKey) && event.key === "Enter") {
         event.preventDefault();
         void runCompilation();
       }
     },
-    [runCompilation],
+    [runCompilation, updateSource],
   );
 
-  const loadExample = useCallback((event) => {
-    const selected = event.currentTarget.value;
-    if (!EXAMPLES[selected]) return;
-    setSource(EXAMPLES[selected]);
-    setCompilation(null);
-    setError(null);
-    setVerification(null);
-    setActiveTab("source");
-  }, []);
+  const loadExample = useCallback(
+    (event) => {
+      const selected = event.currentTarget.value;
+      if (!EXAMPLES[selected]) return;
+      updateSource(EXAMPLES[selected]);
+      setCompilation(null);
+      setError(null);
+      setVerification(null);
+      setActiveTab("source");
+    },
+    [updateSource],
+  );
 
   const handleTabKeyDown = useCallback(
     (event) => {
@@ -294,8 +463,9 @@ export default function ForgeCompiler() {
             <p>
               Self-test passed: {verification.exampleCount} examples and{" "}
               {verification.assertionCount} assertions in{" "}
-              {formatMilliseconds(verification.durationMilliseconds)}.
-              Repository CI runs separately on GitHub.
+              {formatMilliseconds(verification.durationMilliseconds)}. The
+              repository workflow runs the full release gate when hosted on
+              GitHub.
             </p>
           ) : (
             <p>
@@ -346,7 +516,7 @@ export default function ForgeCompiler() {
             tabIndex={activeTab === tab.id ? 0 : -1}
             onClick={() => setActiveTab(tab.id)}
           >
-            <span>{tab.marker}</span>
+            <span aria-hidden="true">{tab.marker}</span>
             {tab.label}
           </button>
         ))}
@@ -375,8 +545,9 @@ export default function ForgeCompiler() {
               id="forge-source"
               ref={textareaRef}
               value={source}
-              onChange={(event) => setSource(event.target.value)}
+              onChange={(event) => updateSource(event.target.value)}
               onKeyDown={handleEditorKeyDown}
+              maxLength={DEFAULT_LIMITS.maxSourceLength}
               spellCheck={false}
               autoCapitalize="off"
               autoCorrect="off"
@@ -384,6 +555,7 @@ export default function ForgeCompiler() {
             />
             <div className="editor-hint">
               <span>Tab inserts two spaces</span>
+              <span>Shift + Tab leaves the editor</span>
               <span>Ctrl/⌘ + Enter runs</span>
             </div>
           </div>
@@ -406,11 +578,7 @@ export default function ForgeCompiler() {
                     data-tone={tokenTone(token)}
                     key={`${token.position.line}:${token.position.column}:${index}`}
                   >
-                    <code>
-                      {token.type === T.STR
-                        ? `"${escapeForDisplay(token.value)}"`
-                        : String(token.value)}
-                    </code>
+                    <code>{displayTokenValue(token)}</code>
                     <span>{token.type}</span>
                     <small>
                       {token.position.line}:{token.position.column}
@@ -444,11 +612,24 @@ export default function ForgeCompiler() {
                   {compilation.analysis.calls} calls
                 </span>
               </div>
-              {tokens.length > MAX_VISIBLE_TOKENS ? (
+              {skipAst ? (
                 <InspectorLimit
                   artifact="AST"
-                  count={tokens.length}
-                  limit={MAX_VISIBLE_TOKENS}
+                  count={
+                    tokens.length > MAX_VISIBLE_TOKENS
+                      ? tokens.length
+                      : compiledSourceLength
+                  }
+                  limit={
+                    tokens.length > MAX_VISIBLE_TOKENS
+                      ? MAX_VISIBLE_TOKENS
+                      : MAX_AST_SOURCE_CHARACTERS
+                  }
+                  unit={
+                    tokens.length > MAX_VISIBLE_TOKENS
+                      ? "tokens"
+                      : "source characters"
+                  }
                   skipped
                 />
               ) : (
@@ -469,32 +650,54 @@ export default function ForgeCompiler() {
                   <span className="eyebrow">Stack machine</span>
                   <h2>{instructionCount} instructions</h2>
                 </div>
-                <span>{formatMilliseconds(compilation.timings.codegen)}</span>
+                <span>
+                  {formatMilliseconds(
+                    compilation.timings.codegen + compilation.timings.link,
+                  )}{" "}
+                  generate + link
+                </span>
               </div>
-              <div className="assembly-list" role="table">
-                {visibleAssembly.map(({ instruction, index }) =>
-                  instruction.opcode === "LABEL" ? (
-                    <div
-                      className="assembly-label"
-                      role="row"
-                      key={`${instruction.argument}:${index}`}
-                    >
-                      {instruction.argument}:
-                    </div>
-                  ) : (
-                    <div className="assembly-row" role="row" key={index}>
-                      <span role="cell">
-                        {String(
-                          compilation.instructionAddresses[index],
-                        ).padStart(4, "0")}
-                      </span>
-                      <strong role="cell">{instruction.opcode}</strong>
-                      <code role="cell">
-                        {displayInstructionArgument(instruction)}
-                      </code>
-                    </div>
-                  ),
-                )}
+              <div
+                className="assembly-list"
+                role="table"
+                aria-label="Generated assembly"
+              >
+                <div className="sr-only" role="rowgroup">
+                  <div role="row">
+                    <span role="columnheader">Address</span>
+                    <span role="columnheader">Opcode</span>
+                    <span role="columnheader">Argument</span>
+                  </div>
+                </div>
+                <div role="rowgroup">
+                  {visibleAssembly.map(({ instruction, index }) =>
+                    instruction.opcode === "LABEL" ? (
+                      <div
+                        className="assembly-label"
+                        role="row"
+                        key={`${instruction.argument}:${index}`}
+                      >
+                        <span role="cell" aria-label="No address">
+                          —
+                        </span>
+                        <strong role="cell">LABEL</strong>
+                        <code role="cell">{instruction.argument}:</code>
+                      </div>
+                    ) : (
+                      <div className="assembly-row" role="row" key={index}>
+                        <span role="cell">
+                          {String(
+                            compilation.instructionAddresses[index],
+                          ).padStart(4, "0")}
+                        </span>
+                        <strong role="cell">{instruction.opcode}</strong>
+                        <code role="cell">
+                          {displayInstructionArgument(instruction)}
+                        </code>
+                      </div>
+                    ),
+                  )}
+                </div>
               </div>
               {compilation.assembly.length > MAX_VISIBLE_ASSEMBLY_ENTRIES && (
                 <InspectorLimit
@@ -544,25 +747,38 @@ export default function ForgeCompiler() {
                   </span>
                   forge://stdout
                 </div>
-                <pre>
-                  {compilation.result.output.length > 0
-                    ? compilation.result.output.join("\n")
-                    : "(program produced no output)"}
-                </pre>
+                <pre>{visibleOutput}</pre>
               </div>
-              {Object.keys(compilation.result.globals).length > 0 && (
+              {outputDisplayCapped && (
+                <InspectorLimit
+                  artifact="Output"
+                  count={outputText.length}
+                  limit={MAX_VISIBLE_OUTPUT_CHARACTERS}
+                  unit="characters"
+                />
+              )}
+              {globals.length > 0 && (
                 <div className="globals-card">
                   <span className="eyebrow">Final global state</span>
                   <dl>
-                    {Object.entries(compilation.result.globals).map(
-                      ([name, value]) => (
-                        <div key={name}>
-                          <dt>{name}</dt>
-                          <dd>{formatValue(value)}</dd>
-                        </div>
-                      ),
-                    )}
+                    {visibleGlobals.map(([name, value]) => (
+                      <div key={name}>
+                        <dt>{name}</dt>
+                        <dd>
+                          {formatValue(value, {
+                            maxCharacters: MAX_INSPECTOR_VALUE_CHARACTERS,
+                          })}
+                        </dd>
+                      </div>
+                    ))}
                   </dl>
+                  {globals.length > MAX_VISIBLE_GLOBALS && (
+                    <InspectorLimit
+                      artifact="Global"
+                      count={globals.length}
+                      limit={MAX_VISIBLE_GLOBALS}
+                    />
+                  )}
                 </div>
               )}
             </div>
@@ -595,32 +811,48 @@ export default function ForgeCompiler() {
                     </tr>
                   </thead>
                   <tbody>
-                    {compilation.result.trace.map((entry, index) => (
+                    {visibleTrace.map((entry, index) => (
                       <tr key={`${entry.programCounter}:${index}`}>
                         <td>{entry.programCounter}</td>
                         <td>{entry.opcode}</td>
                         <td>
                           {entry.argument === undefined
                             ? "—"
-                            : String(entry.argument)}
+                            : formatForPrint(String(entry.argument), {
+                                maxCharacters: MAX_INSPECTOR_VALUE_CHARACTERS,
+                              })}
                         </td>
                         <td>
-                          [
-                          {entry.stackAfter
-                            .map((value) => formatValue(value))
-                            .join(", ")}
-                          ]
+                          {formatValue(entry.stackAfter, {
+                            maxCharacters: MAX_INSPECTOR_VALUE_CHARACTERS,
+                          })}
                         </td>
                       </tr>
                     ))}
                   </tbody>
                 </table>
               </div>
+              {compilation.result.trace.length > MAX_VISIBLE_TRACE_ENTRIES && (
+                <InspectorLimit
+                  artifact="Trace"
+                  count={compilation.result.trace.length}
+                  limit={MAX_VISIBLE_TRACE_ENTRIES}
+                />
+              )}
             </div>
           ) : (
             <TabPlaceholder />
           ))}
       </section>
+      {TABS.filter((tab) => tab.id !== activeTab).map((tab) => (
+        <section
+          key={tab.id}
+          id={`panel-${tab.id}`}
+          role="tabpanel"
+          aria-labelledby={`tab-${tab.id}`}
+          hidden
+        />
+      ))}
 
       <footer className="app-footer">
         <div>

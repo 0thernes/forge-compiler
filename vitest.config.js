@@ -21,8 +21,11 @@ export default defineConfig({
         "src/compiler/lexer.js",
         "src/compiler/parser.js",
         "src/compiler/codegen.js",
+        "src/compiler/compiler.worker.js",
+        "src/compiler/selfTest.js",
         "src/compiler/vm.js",
         "src/compiler/index.js",
+        "src/useCompilerWorker.js",
       ],
       thresholds: {
         lines: 85,

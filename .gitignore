@@ -7,3 +7,6 @@ coverage/
 Thumbs.db
 .idea/
 .vscode/
+
+# This repository intentionally tracks a credential-free npm policy file.
+!.npmrc

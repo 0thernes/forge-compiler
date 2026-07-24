@@ -5,16 +5,27 @@ updates:
     schedule:
       interval: weekly
       day: monday
+      timezone: America/Los_Angeles
+    versioning-strategy: increase
+    open-pull-requests-limit: 5
     groups:
       development-dependencies:
         dependency-type: development
+        update-types:
+          - minor
+          - patch
 
   - package-ecosystem: github-actions
     directory: /
     schedule:
       interval: weekly
       day: monday
+      timezone: America/Los_Angeles
+    open-pull-requests-limit: 5
     groups:
       github-actions:
         patterns:
           - "*"
+        update-types:
+          - minor
+          - patch

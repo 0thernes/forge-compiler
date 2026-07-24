@@ -22,8 +22,21 @@ language has no file, network, DOM, module, or JavaScript interop operations.
 Compilation normally runs in a Web Worker, and explicit resource limits bound
 the main parser and VM data structures.
 
+Direct assembly passed to the VM is checked for instruction shape, known
+opcodes, operands, target bounds, and configured instruction, string, and array
+limits before execution mutates state. Inspector formatting and worker payloads
+are independently bounded.
+
 These controls reduce accidental denial-of-service risk; they are not a formal
 security sandbox. A hostile input may still consume the configured worker CPU
 or memory budget until a limit is reached. Do not expose this educational
 compiler as a multi-tenant execution service without an additional process or
 container boundary, request timeouts, memory quotas, and worker termination.
+
+## Browser data
+
+The editor stores one versioned source draft in the browser's local storage for
+the deployed origin. FORGE does not upload that draft or program output, but
+anyone with access to the same browser profile can read it through the site.
+Avoid entering secrets and clear the site's stored data when using a shared
+device.

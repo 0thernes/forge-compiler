@@ -20,6 +20,7 @@ describe("compiler worker message contract", () => {
         },
       },
     });
+    expect(transferred.value).not.toHaveProperty("linkedCode");
   });
 
   it("preserves structured diagnostics across cloning", () => {

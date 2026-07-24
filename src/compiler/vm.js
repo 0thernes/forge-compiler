@@ -3,6 +3,207 @@ import { link } from "./codegen.js";
 import { ForgeError } from "./errors.js";
 import { formatForPrint, typeName } from "./format.js";
 
+const EXECUTABLE_OPCODES = new Set([
+  "ADD",
+  "ARGUMENT_COUNT",
+  "BIND_FUNCTION",
+  "BUILTIN_CHAR_AT",
+  "BUILTIN_FLOOR",
+  "BUILTIN_LEN",
+  "BUILTIN_POP",
+  "BUILTIN_PUSH",
+  "BUILTIN_SUBSTR",
+  "BUILTIN_TYPE_OF",
+  "CALL",
+  "CHECK_ARGUMENT_COUNT",
+  "DECLARE",
+  "DIV",
+  "DIVIDE",
+  "DUPLICATE_PAIR",
+  "ENTER_SCOPE",
+  "EQ",
+  "EXIT_SCOPE",
+  "GT",
+  "GTE",
+  "HALT",
+  "INDEX_GET",
+  "INDEX_SET",
+  "JUMP",
+  "JUMP_IF_NONZERO",
+  "JUMP_IF_ZERO",
+  "LOAD",
+  "LT",
+  "LTE",
+  "MAKE_ARRAY",
+  "MOD",
+  "MUL",
+  "MULTIPLY",
+  "NEGATE",
+  "NEQ",
+  "NOT",
+  "POP",
+  "PRINT",
+  "PRINT_LINE",
+  "PUSH",
+  "PUSH_STRING",
+  "RETURN",
+  "STORE",
+  "STORE_LOCAL",
+  "SUB",
+  "SUBTRACT",
+]);
+
+const NAMED_OPERAND_OPCODES = new Set([
+  "BIND_FUNCTION",
+  "CALL",
+  "DECLARE",
+  "JUMP",
+  "JUMP_IF_NONZERO",
+  "JUMP_IF_ZERO",
+  "LABEL",
+  "LOAD",
+  "STORE",
+  "STORE_LOCAL",
+]);
+
+const COUNT_OPERAND_OPCODES = new Set([
+  "ARGUMENT_COUNT",
+  "CHECK_ARGUMENT_COUNT",
+  "MAKE_ARRAY",
+]);
+
+function assemblyError(message, code = "VM_ASSEMBLY") {
+  return new ForgeError(message, {
+    phase: "execute",
+    code,
+  });
+}
+
+function executionLimits(options) {
+  const normalized =
+    typeof options === "number" ? { maxSteps: options } : options;
+  const overrides =
+    normalized !== null &&
+    typeof normalized === "object" &&
+    !Array.isArray(normalized) &&
+    Object.hasOwn(normalized, "limits")
+      ? normalized.limits
+      : normalized;
+  return mergeLimits(overrides);
+}
+
+function validateAssembly(assembly, limits, linked = false) {
+  if (!Array.isArray(assembly)) {
+    throw assemblyError(
+      "VM assembly must be an instruction array",
+      "VM_ASSEMBLY_INPUT",
+    );
+  }
+  if (assembly.length > limits.maxInstructions) {
+    throw assemblyError(
+      `Instruction count exceeds the ${limits.maxInstructions} instruction limit`,
+      "VM_INSTRUCTION_LIMIT",
+    );
+  }
+
+  for (let index = 0; index < assembly.length; index += 1) {
+    const instruction = assembly[index];
+    if (
+      instruction === null ||
+      typeof instruction !== "object" ||
+      Array.isArray(instruction)
+    ) {
+      throw assemblyError(
+        `Invalid instruction at assembly index ${index}`,
+        "VM_ASSEMBLY_INSTRUCTION",
+      );
+    }
+
+    // Linked code is an internal, canonical representation. Unlinked assembly
+    // keeps accepting the v13 `op`/`arg` aliases and is normalized by link().
+    const opcode = linked
+      ? instruction.opcode
+      : (instruction.opcode ?? instruction.op);
+    const argument = linked
+      ? instruction.argument
+      : (instruction.argument ?? instruction.arg);
+    if (
+      typeof opcode !== "string" ||
+      (!EXECUTABLE_OPCODES.has(opcode) && !(!linked && opcode === "LABEL"))
+    ) {
+      throw assemblyError(
+        `Unknown opcode at assembly index ${index}: ${String(opcode)}`,
+        "VM_OPCODE_UNKNOWN",
+      );
+    }
+    if (NAMED_OPERAND_OPCODES.has(opcode)) {
+      if (typeof argument !== "string" || argument.length === 0) {
+        throw assemblyError(
+          `${opcode} at assembly index ${index} requires a name`,
+          "VM_ASSEMBLY_OPERAND",
+        );
+      }
+    } else if (COUNT_OPERAND_OPCODES.has(opcode)) {
+      if (!Number.isSafeInteger(argument) || argument < 0) {
+        throw assemblyError(
+          `${opcode} at assembly index ${index} requires a non-negative safe integer`,
+          "VM_ASSEMBLY_OPERAND",
+        );
+      }
+      if (opcode === "MAKE_ARRAY" && argument > limits.maxArrayLength) {
+        throw assemblyError(
+          `Array length exceeds the ${limits.maxArrayLength} element limit`,
+          "VM_ARRAY_LIMIT",
+        );
+      }
+    } else if (opcode === "PUSH") {
+      if (typeof argument !== "number" || !Number.isFinite(argument)) {
+        throw assemblyError(
+          `PUSH at assembly index ${index} requires a finite number`,
+          "VM_ASSEMBLY_OPERAND",
+        );
+      }
+    } else if (opcode === "PUSH_STRING") {
+      if (typeof argument !== "string") {
+        throw assemblyError(
+          `PUSH_STRING at assembly index ${index} requires a string`,
+          "VM_ASSEMBLY_OPERAND",
+        );
+      }
+      if (argument.length > limits.maxStringLength) {
+        throw assemblyError(
+          `String length exceeds the ${limits.maxStringLength} character limit`,
+          "VM_STRING_LIMIT",
+        );
+      }
+    }
+
+    if (linked) {
+      const isJump =
+        opcode === "JUMP" ||
+        opcode === "JUMP_IF_ZERO" ||
+        opcode === "JUMP_IF_NONZERO";
+      if (isJump || opcode === "CALL") {
+        const target = instruction.target;
+        const targetIsPastBoundary =
+          opcode === "CALL"
+            ? target >= assembly.length
+            : target > assembly.length;
+        if (
+          !Number.isSafeInteger(target) ||
+          target < 0 ||
+          targetIsPastBoundary
+        ) {
+          throw assemblyError(
+            `${opcode} at instruction ${index} has an invalid target`,
+            "VM_ASSEMBLY_TARGET",
+          );
+        }
+      }
+    }
+  }
+}
+
 function createScope(parent = null) {
   return {
     parent,
@@ -20,10 +221,20 @@ function countNewlines(value) {
 }
 
 export function execute(assembly, options = {}) {
-  const normalizedOptions =
-    typeof options === "number" ? { maxSteps: options } : options;
-  const limits = mergeLimits(normalizedOptions.limits ?? normalizedOptions);
+  const limits = executionLimits(options);
+  validateAssembly(assembly, limits);
   const code = link(assembly);
+  validateAssembly(code, limits, true);
+  return runLinkedCode(code, limits);
+}
+
+export function executeLinked(code, options = {}) {
+  const limits = executionLimits(options);
+  validateAssembly(code, limits, true);
+  return runLinkedCode(code, limits);
+}
+
+function runLinkedCode(code, limits) {
   const stack = [];
   const callStack = [];
   const rootScope = createScope();

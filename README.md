@@ -1,7 +1,6 @@
 # FORGE Compiler
 
 [![CI](https://github.com/0thernes/forge-compiler/actions/workflows/ci.yml/badge.svg)](https://github.com/0thernes/forge-compiler/actions/workflows/ci.yml)
-[![Deploy](https://github.com/0thernes/forge-compiler/actions/workflows/deploy.yml/badge.svg)](https://github.com/0thernes/forge-compiler/actions/workflows/deploy.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-cyan.svg)](LICENSE)
 
 FORGE is a small educational language, compiler pipeline, and deterministic
@@ -27,12 +26,14 @@ maintainable project:
 - structured, phase-aware diagnostics;
 - immutable trace snapshots and retained final globals;
 - compilation in a Web Worker to keep the interface responsive;
+- versioned local draft persistence and stale-request protection;
 - 200+ automated tests, coverage thresholds, linting, formatting, production
   builds, dependency updates, and GitHub Pages deployment.
 
-The original v13 examples and conformance cases remain as compatibility
-fixtures. The unrelated graphics and creature-simulation material in the
-provided planning notes is intentionally outside this compiler repository.
+The original v13 import paths remain as compatibility adapters to one canonical
+example and conformance corpus. The unrelated graphics and creature-simulation
+material in the provided planning notes is intentionally outside this compiler
+repository.
 
 ## Try the language
 
@@ -65,15 +66,21 @@ npm ci
 npm run dev
 ```
 
-| Command                 | Purpose                                        |
-| ----------------------- | ---------------------------------------------- |
-| `npm run dev`           | Start the Vite development server              |
-| `npm test`              | Run the complete Vitest suite once             |
-| `npm run test:coverage` | Run tests and enforce core coverage thresholds |
-| `npm run lint`          | Run ESLint with zero warnings allowed          |
-| `npm run format:check`  | Check Prettier formatting                      |
-| `npm run build`         | Create the production bundle in `dist/`        |
-| `npm run verify`        | Run the same quality gate used by CI           |
+| Command                  | Purpose                                        |
+| ------------------------ | ---------------------------------------------- |
+| `npm run dev`            | Start the Vite development server              |
+| `npm test`               | Run the complete Vitest suite once             |
+| `npm run test:coverage`  | Run tests and enforce core coverage thresholds |
+| `npm run lint`           | Run ESLint with zero warnings allowed          |
+| `npm run format:check`   | Check Prettier formatting                      |
+| `npm run build`          | Create the production bundle in `dist/`        |
+| `npm run verify:quality` | Run formatting, lint, and coverage checks      |
+| `npm run verify`         | Run the same quality gate used by CI           |
+
+Pushes and pull requests run the quality gate with SHA-pinned actions. A
+successful `main` build is the only artifact deployed to Pages. Version tags
+also produce portable archives, a build-dependency CycloneDX SBOM, checksums,
+and a draft GitHub Release.
 
 ## Pipeline
 
@@ -98,10 +105,16 @@ const compilation = compileSource('print("hello");');
 console.log(compilation.result.output); // ["hello"]
 ```
 
+`compileSource` returns both labelled assembly and resolved linked code. Browser
+workers use `{ includeLinkedCode: false }` because the interface only displays
+assembly, avoiding an unnecessary second program copy across the worker
+boundary.
+
 ## Documentation
 
 - [Language reference](docs/LANGUAGE.md)
 - [Compiler and VM architecture](docs/ARCHITECTURE.md)
+- [Maintainer release runbook](docs/RELEASING.md)
 - [Changelog](CHANGELOG.md)
 - [Contributing](CONTRIBUTING.md)
 - [Security and execution model](SECURITY.md)
