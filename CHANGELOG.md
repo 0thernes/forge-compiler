@@ -25,12 +25,25 @@ All notable changes to FORGE are documented here.
   Pull requests exercise the packaging and artifact-transfer path; checksummed
   assets pass through an independent validation job before the separate
   publishing job receives the minimal `contents: write` permission.
+- The language reference documents parenthesized call targets, the separate
+  function and variable namespaces, and the parse/analyze phase split for
+  control-flow diagnostics.
 
 ### Fixed
 
 - Nested and re-entrant `print` calls no longer share a partial outer record;
   each call emits one isolated record after its own arguments finish.
-- Printing and string concatenation honor `maxFormatCharacters`.
+- String concatenation with `+` is lossless: operands render completely up to
+  the string-length limit, and arrays nested deeper than the format depth or
+  containing themselves raise a runtime error instead of silently truncating
+  program-visible values. Printing still uses the bounded display formatter.
+- Function bodies may reference sibling `let` declarations that appear later
+  in the same block, restoring v13-legal forward references; calling such a
+  function before its captured declaration has run still fails at runtime.
+- Multi-line Tab indentation no longer indents the line following a selection
+  that ends at column 0.
+- Verification and stale-source notices are announced reliably by screen
+  readers through pre-mounted live regions.
 - Trace character accounting includes retained metadata aliases, stack
   truncation markers, and zero-character budgets.
 - Step-limit diagnostics pass through output quota handling and report
