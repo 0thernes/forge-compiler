@@ -240,8 +240,11 @@ export function lex(source, limitOverrides = {}) {
       continue;
     }
 
+    // source[index] is a single UTF-16 code unit; astral-plane characters
+    // would surface as a lone surrogate in the diagnostic without this.
+    const unexpected = String.fromCodePoint(source.codePointAt(index));
     throw lexError(
-      `Unexpected char '${character}'`,
+      `Unexpected char '${unexpected}'`,
       start,
       "LEX_UNEXPECTED_CHARACTER",
     );

@@ -75,6 +75,61 @@ if (true) { fn local() { return 2; } print(local()); }
 `).output,
     ).toEqual(["1", "2"]);
   });
+
+  it("keeps re-entrant print records isolated and evaluates arguments left to right", () => {
+    const compilation = compileSource(`
+let order = [];
+fn first() { push(order, "first"); return "A"; }
+fn second() {
+  push(order, "second");
+  print("inner");
+  return "B";
+}
+print("outer:", first(), second());
+print(order);
+`);
+
+    expect(compilation.result.output).toEqual([
+      "inner",
+      "outer:AB",
+      '["first", "second"]',
+    ]);
+    expect(compilation.assembly.map(({ opcode }) => opcode)).toEqual(
+      expect.arrayContaining(["PRINT", "PRINT_LINE"]),
+    );
+
+    const emptyPrint = compileSource(`print();`);
+    expect(emptyPrint.result.output).toEqual([""]);
+    expect(emptyPrint.assembly.map(({ opcode }) => opcode)).toEqual(
+      expect.arrayContaining(["PRINT_LINE"]),
+    );
+
+    const mutableArgument = compileSource(`
+let values = [1];
+print(values, push(values, 2));
+`);
+    expect(mutableArgument.result.output).toEqual(["[1]2"]);
+
+    const narrowStack = compileSource(`print("a", "b");`, {
+      limits: { maxStackDepth: 1 },
+    });
+    expect(narrowStack.result.output).toEqual(["ab"]);
+
+    const cappedNested = compileSource(
+      `
+fn nested() { print("i"); return "x"; }
+print("o", nested());
+`,
+      {
+        limits: { maxOutputLines: 1, maxOutputCharacters: 2 },
+      },
+    ).result;
+    expect(cappedNested).toMatchObject({
+      output: ["i", "[OUTPUT TRUNCATED AT 1 LINES / 2 CHARACTERS]"],
+      outputTruncated: true,
+      outputTruncationReason: "lines_and_characters",
+    });
+  });
 });
 
 describe("pipeline contracts", () => {
@@ -337,6 +392,49 @@ describe("execution budgets and historical trace", () => {
     expect(result.outputTruncationReason).toBe("characters");
   });
 
+  it("uses the configured formatted-value character budget", () => {
+    const result = compileSource(
+      `let rendered = [12345] + ""; print([12345]);`,
+      {
+        limits: { maxFormatCharacters: 3 },
+      },
+    ).result;
+
+    expect(result.globals.rendered).toBe("[…]");
+    expect(result.output).toEqual(["[…]"]);
+  });
+
+  it("accounts for the step-limit marker through output quotas", () => {
+    const result = compileSource(`print("unreachable");`, {
+      limits: {
+        maxSteps: 0,
+        maxOutputLines: 0,
+        maxOutputCharacters: 0,
+      },
+    }).result;
+
+    expect(result).toMatchObject({
+      status: "step_limit",
+      outputTruncated: true,
+      outputTruncationReason: "lines_and_characters",
+    });
+    expect(result.output).toEqual([
+      "[OUTPUT TRUNCATED AT 0 LINES / 0 CHARACTERS]",
+    ]);
+    expect(result.output).not.toContain("[EXECUTION LIMIT REACHED]");
+
+    const partial = compileSource(`print("a"); while (true) {}`, {
+      limits: { maxSteps: 2, maxOutputCharacters: 4 },
+    }).result;
+    expect(partial.output.at(-1)).toBe("[OUTPUT TRUNCATED AT 4 CHARACTERS]");
+    expect(partial.output.slice(0, -1).join("\n")).toHaveLength(4);
+    expect(partial).toMatchObject({
+      status: "step_limit",
+      outputTruncated: true,
+      outputTruncationReason: "characters",
+    });
+  });
+
   it("validates direct assembly before execution", () => {
     expect(() =>
       execute([{ opcode: "PUSH", argument: 1 }, { opcode: "HALT" }], {
@@ -430,6 +528,46 @@ describe("execution budgets and historical trace", () => {
         .every((value) => value.length <= 12),
     ).toBe(true);
   });
+
+  it("counts trace metadata and truncation markers inside the trace budget", () => {
+    const result = execute(
+      [
+        { opcode: "PUSH", argument: 1 },
+        { opcode: "PUSH", argument: 2 },
+        { opcode: "HALT" },
+      ],
+      {
+        maxTraceCharacters: 40,
+        maxTraceStackItems: 0,
+        maxTraceValueCharacters: 40,
+      },
+    );
+
+    const countStrings = (value) => {
+      if (typeof value === "string") return value.length;
+      if (Array.isArray(value)) {
+        return value.reduce((total, item) => total + countStrings(item), 0);
+      }
+      if (value && typeof value === "object") {
+        return Object.values(value).reduce(
+          (total, item) => total + countStrings(item),
+          0,
+        );
+      }
+      return 0;
+    };
+
+    expect(countStrings(result.trace)).toBe(result.traceCharacters);
+    expect(result.traceCharacters).toBeLessThanOrEqual(40);
+    expect(result.traceOverflow).toBe(true);
+
+    const zeroBudget = compileSource(`print("abcdef");`, {
+      limits: { maxTraceCharacters: 0 },
+    }).result;
+    expect(countStrings(zeroBudget.trace)).toBe(0);
+    expect(zeroBudget.traceCharacters).toBe(0);
+    expect(zeroBudget.traceOverflow).toBe(true);
+  });
 });
 
 describe("lexer and formatter hardening", () => {
@@ -515,6 +653,19 @@ describe("static depth, declaration, and configuration guards", () => {
       expect(() => compileSource(source)).toThrow(
         "used before its declaration",
       );
+    }
+  });
+
+  it("detects indirect initializer self-reference deterministically at runtime", () => {
+    expect.assertions(3);
+    try {
+      compileSource(
+        `let value = read(); fn read() { return value; } print(value);`,
+      );
+    } catch (error) {
+      expect(error.phase).toBe("execute");
+      expect(error.code).toBe("VM_UNDEFINED_VARIABLE");
+      expect(error.message).toContain("Undefined variable: value");
     }
   });
 

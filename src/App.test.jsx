@@ -155,6 +155,90 @@ describe("ForgeCompiler interface", () => {
     );
   });
 
+  it("indents only the selected lines when the selection ends at column 0", () => {
+    render(<ForgeCompiler />);
+    const editor = screen.getByRole("textbox", {
+      name: "FORGE source code",
+    });
+    fireEvent.change(editor, { target: { value: "alpha\nbeta" } });
+    editor.setSelectionRange(0, 6);
+    fireEvent.keyDown(editor, { key: "Tab" });
+    expect(editor).toHaveValue("  alpha\nbeta");
+    expect(editor.selectionStart).toBe(2);
+    expect(editor.selectionEnd).toBe(8);
+  });
+
+  it("runs consecutive keyboard compilations after switching to Output", async () => {
+    class ControlledWorker {
+      constructor() {
+        this.messages = [];
+        this.terminate = () => {};
+        ControlledWorker.instance = this;
+      }
+
+      postMessage(message) {
+        this.messages.push(message);
+      }
+    }
+    vi.stubGlobal("Worker", ControlledWorker);
+
+    render(<ForgeCompiler />);
+    const editor = screen.getByRole("textbox", {
+      name: "FORGE source code",
+    });
+    fireEvent.change(editor, { target: { value: `print("shortcut");` } });
+    editor.focus();
+
+    expect(fireEvent.keyDown(editor, { key: "Enter", ctrlKey: true })).toBe(
+      false,
+    );
+    expect(ControlledWorker.instance.messages).toHaveLength(1);
+
+    const firstRequest = ControlledWorker.instance.messages[0];
+    await act(async () => {
+      ControlledWorker.instance.onmessage({
+        data: {
+          id: firstRequest.id,
+          ok: true,
+          value: compileSource(firstRequest.payload.source),
+        },
+      });
+    });
+
+    const outputTab = screen.getByRole("tab", { name: "Output" });
+    await waitFor(() => {
+      expect(outputTab).toHaveAttribute("aria-selected", "true");
+      expect(outputTab).toHaveFocus();
+      expect(
+        screen.getByRole("button", { name: /run program/i }),
+      ).toBeEnabled();
+    });
+
+    expect(fireEvent.keyDown(outputTab, { key: "Enter", metaKey: true })).toBe(
+      false,
+    );
+    expect(ControlledWorker.instance.messages).toHaveLength(2);
+
+    const secondRequest = ControlledWorker.instance.messages[1];
+    await act(async () => {
+      ControlledWorker.instance.onmessage({
+        data: {
+          id: secondRequest.id,
+          ok: true,
+          value: compileSource(secondRequest.payload.source),
+        },
+      });
+    });
+
+    await waitFor(() => {
+      expect(outputTab).toHaveFocus();
+      expect(
+        screen.getByRole("button", { name: /run program/i }),
+      ).toBeEnabled();
+    });
+    expect(screen.getByText("shortcut")).toBeInTheDocument();
+  });
+
   it("shows Object prototype names as identifiers", async () => {
     render(<ForgeCompiler />);
     const editor = screen.getByRole("textbox", {
@@ -182,12 +266,20 @@ describe("ForgeCompiler interface", () => {
   it("labels the browser verifier as a self-test rather than CI", async () => {
     render(<ForgeCompiler />);
     fireEvent.click(screen.getByRole("button", { name: /verify pipeline/i }));
+    const status = screen.getByRole("status", { name: "Verification status" });
     await waitFor(() => {
-      expect(screen.getByRole("status")).toHaveTextContent("Self-test passed");
+      expect(status).toHaveTextContent("Self-test passed");
     });
-    expect(screen.getByRole("status")).toHaveTextContent(
+    expect(status).toHaveTextContent(
       "workflow runs the full release gate when hosted on GitHub",
     );
+  });
+
+  it("mounts the verification status live region before any verification result", () => {
+    render(<ForgeCompiler />);
+    const status = screen.getByRole("status", { name: "Verification status" });
+    expect(status).toBeEmptyDOMElement();
+    expect(status).toHaveAttribute("aria-live", "polite");
   });
 
   it("serializes verification and keyboard compilation requests", async () => {

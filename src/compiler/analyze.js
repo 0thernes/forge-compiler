@@ -73,8 +73,19 @@ export function analyze(ast) {
     summary.variables += body.filter(
       (statement) => statement.type === "Let",
     ).length;
+    // A function body can run before or after later statements. Declaration
+    // order alone therefore cannot prove whether a captured sibling `let` is
+    // initialized; defer bodies and leave that path-sensitive check to the VM.
+    const deferredFunctions = [];
     for (const statement of body) {
+      if (statement.type === "FnDecl") {
+        deferredFunctions.push(statement);
+        continue;
+      }
       analyzeStatement(statement, scope, context);
+    }
+    for (const declaration of deferredFunctions) {
+      analyzeStatement(declaration, scope, context);
     }
     return scope;
   }
