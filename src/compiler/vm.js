@@ -1,7 +1,7 @@
 import { DEFAULT_LIMITS, mergeLimits } from "./constants.js";
 import { link } from "./codegen.js";
 import { ForgeError } from "./errors.js";
-import { formatForPrint, typeName } from "./format.js";
+import { formatForPrint, renderValue, typeName } from "./format.js";
 
 const EXECUTABLE_OPCODES = new Set([
   "ADD",
@@ -340,14 +340,41 @@ function runLinkedCode(code, limits) {
   }
 
   function coerceForConcatenation(value) {
-    return formatForPrint(value, {
-      maxCharacters: Math.min(
-        limits.maxFormatCharacters,
-        limits.maxStringLength,
-      ),
-      maxItems: limits.maxFormatItems,
+    if (typeof value === "string") return value;
+    const coercionBudget =
+      limits.maxStringLength === Number.MAX_SAFE_INTEGER
+        ? limits.maxStringLength
+        : limits.maxStringLength + 1;
+    const rendered = renderValue(value, {
+      maxCharacters: coercionBudget,
+      maxItems: Number.MAX_SAFE_INTEGER,
       maxDepth: limits.maxFormatDepth,
     });
+    if (!rendered.complete) {
+      if (rendered.reason === "characters") {
+        throw runtimeError(
+          `String length exceeds the ${limits.maxStringLength} character limit`,
+          "VM_STRING_LIMIT",
+        );
+      }
+      if (rendered.reason === "cycle") {
+        throw runtimeError(
+          "'+' cannot convert an array that contains itself",
+          "VM_FORMAT_CYCLE",
+        );
+      }
+      if (rendered.reason === "depth") {
+        throw runtimeError(
+          `'+' cannot convert an array nested deeper than ${limits.maxFormatDepth} levels`,
+          "VM_FORMAT_DEPTH",
+        );
+      }
+      throw runtimeError(
+        "'+' cannot convert an array that exceeds the formatting item limit",
+        "VM_FORMAT_ITEMS",
+      );
+    }
+    return rendered.text;
   }
 
   function captureTraceString(value, copies = 1) {

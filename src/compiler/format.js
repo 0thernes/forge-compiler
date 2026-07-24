@@ -50,7 +50,7 @@ function hasTruncationMarker(text) {
   return text.includes("…") || text.includes("...");
 }
 
-export function formatValue(value, options = {}) {
+export function renderValue(value, options = {}) {
   const maxDepth = normalizeLimit(
     options.maxDepth,
     DEFAULT_LIMITS.maxFormatDepth,
@@ -70,8 +70,12 @@ export function formatValue(value, options = {}) {
     if (current.length === 0 && budget >= 2) {
       return { text: '""', complete: true };
     }
-    if (budget === 0) return { text: "", complete: false };
-    if (budget <= 2) return { text: "…", complete: false };
+    if (budget === 0) {
+      return { text: "", complete: false, reason: "characters" };
+    }
+    if (budget <= 2) {
+      return { text: "…", complete: false, reason: "characters" };
+    }
 
     const contentBudget = budget - 2;
     const parts = [];
@@ -83,7 +87,11 @@ export function formatValue(value, options = {}) {
           contentLength -= parts.pop().length;
         }
         if (contentBudget > 0) parts.push("…");
-        return { text: `"${parts.join("")}"`, complete: false };
+        return {
+          text: `"${parts.join("")}"`,
+          complete: false,
+          reason: "characters",
+        };
       }
       parts.push(escaped);
       contentLength += escaped.length;
@@ -120,6 +128,7 @@ export function formatValue(value, options = {}) {
       return {
         text: truncate(text, budget),
         complete: text.length <= budget,
+        ...(text.length <= budget ? {} : { reason: "characters" }),
       };
     }
     if (typeof current === "string") {
@@ -130,29 +139,44 @@ export function formatValue(value, options = {}) {
       return {
         text: truncate(text, budget),
         complete: text.length <= budget,
+        ...(text.length <= budget ? {} : { reason: "characters" }),
       };
     }
     if (current.length === 0) {
       return budget >= 2
         ? { text: "[]", complete: true }
-        : { text: "…".slice(0, budget), complete: false };
+        : {
+            text: "…".slice(0, budget),
+            complete: false,
+            reason: "characters",
+          };
     }
     if (ancestors.has(current)) {
       return {
         text: boundedArrayMarker("[...]", budget),
         complete: false,
+        reason: "cycle",
       };
     }
-    if (depth >= maxDepth || remainingItems <= 0) {
+    if (depth >= maxDepth) {
       return {
         text: boundedArrayMarker("[…]", budget),
         complete: false,
+        reason: "depth",
+      };
+    }
+    if (remainingItems <= 0) {
+      return {
+        text: boundedArrayMarker("[…]", budget),
+        complete: false,
+        reason: "items",
       };
     }
     if (budget < 3) {
       return {
         text: "…".slice(0, budget),
         complete: false,
+        reason: "characters",
       };
     }
 
@@ -161,12 +185,14 @@ export function formatValue(value, options = {}) {
     const contentBudget = budget - 2;
     let contentLength = 0;
     let complete = true;
+    let reason = null;
 
     for (let itemIndex = 0; itemIndex < current.length; itemIndex += 1) {
       const item = current[itemIndex];
       if (remainingItems <= 0) {
         addArrayTruncation(parts, contentBudget, contentLength);
         complete = false;
+        reason = "items";
         break;
       }
 
@@ -179,6 +205,7 @@ export function formatValue(value, options = {}) {
       if (childBudget <= 0) {
         addArrayTruncation(parts, contentBudget, contentLength);
         complete = false;
+        reason = "characters";
         break;
       }
 
@@ -187,6 +214,7 @@ export function formatValue(value, options = {}) {
       if (rendered.text.length === 0) {
         addArrayTruncation(parts, contentBudget, contentLength);
         complete = false;
+        reason = rendered.reason ?? "characters";
         break;
       }
 
@@ -197,6 +225,7 @@ export function formatValue(value, options = {}) {
           addArrayTruncation(parts, contentBudget, contentLength);
         }
         complete = false;
+        reason = rendered.reason ?? "characters";
         break;
       }
     }
@@ -205,10 +234,19 @@ export function formatValue(value, options = {}) {
     return {
       text: `[${parts.join(", ")}]`,
       complete,
+      ...(complete ? {} : { reason: reason ?? "characters" }),
     };
   }
 
-  const rendered = visit(value, 0, maxCharacters);
+  return visit(value, 0, maxCharacters);
+}
+
+export function formatValue(value, options = {}) {
+  const maxCharacters = normalizeLimit(
+    options.maxCharacters,
+    DEFAULT_LIMITS.maxFormatCharacters,
+  );
+  const rendered = renderValue(value, options);
   if (
     !rendered.complete &&
     maxCharacters > 0 &&
