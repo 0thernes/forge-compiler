@@ -1,7 +1,7 @@
 import { DEFAULT_LIMITS, mergeLimits } from "./constants.js";
 import { link } from "./codegen.js";
 import { ForgeError } from "./errors.js";
-import { formatForPrint, typeName } from "./format.js";
+import { formatForPrint, renderValue, typeName } from "./format.js";
 
 const EXECUTABLE_OPCODES = new Set([
   "ADD",
@@ -339,15 +339,29 @@ function runLinkedCode(code, limits) {
     }
   }
 
+  // In-program string coercion must be lossless: unlike the bounded display
+  // formatter, a truncated rendering here would silently corrupt
+  // program-visible values, so an unrepresentable operand throws instead.
   function coerceForConcatenation(value) {
-    return formatForPrint(value, {
-      maxCharacters: Math.min(
-        limits.maxFormatCharacters,
-        limits.maxStringLength,
-      ),
-      maxItems: limits.maxFormatItems,
+    if (typeof value === "string") return value;
+    const rendered = renderValue(value, {
+      maxCharacters: limits.maxStringLength + 1,
+      maxItems: Number.MAX_SAFE_INTEGER,
       maxDepth: limits.maxFormatDepth,
     });
+    if (!rendered.complete) {
+      if (rendered.text.length > limits.maxStringLength) {
+        throw runtimeError(
+          `String length exceeds the ${limits.maxStringLength} character limit`,
+          "VM_STRING_LIMIT",
+        );
+      }
+      throw runtimeError(
+        `'+' cannot convert an array nested deeper than ${limits.maxFormatDepth} levels or an array that contains itself`,
+        "VM_FORMAT_DEPTH",
+      );
+    }
+    return rendered.text;
   }
 
   function captureTraceString(value, copies = 1) {

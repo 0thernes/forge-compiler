@@ -392,7 +392,7 @@ describe("execution budgets and historical trace", () => {
     expect(result.outputTruncationReason).toBe("characters");
   });
 
-  it("uses the configured formatted-value character budget", () => {
+  it("keeps concatenation lossless while print display stays bounded", () => {
     const result = compileSource(
       `let rendered = [12345] + ""; print([12345]);`,
       {
@@ -400,7 +400,7 @@ describe("execution budgets and historical trace", () => {
       },
     ).result;
 
-    expect(result.globals.rendered).toBe("[…]");
+    expect(result.globals.rendered).toBe("[12345]");
     expect(result.output).toEqual(["[…]"]);
   });
 

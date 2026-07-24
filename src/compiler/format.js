@@ -50,7 +50,7 @@ function hasTruncationMarker(text) {
   return text.includes("…") || text.includes("...");
 }
 
-export function formatValue(value, options = {}) {
+export function renderValue(value, options = {}) {
   const maxDepth = normalizeLimit(
     options.maxDepth,
     DEFAULT_LIMITS.maxFormatDepth,
@@ -208,7 +208,15 @@ export function formatValue(value, options = {}) {
     };
   }
 
-  const rendered = visit(value, 0, maxCharacters);
+  return visit(value, 0, maxCharacters);
+}
+
+export function formatValue(value, options = {}) {
+  const maxCharacters = normalizeLimit(
+    options.maxCharacters,
+    DEFAULT_LIMITS.maxFormatCharacters,
+  );
+  const rendered = renderValue(value, options);
   if (
     !rendered.complete &&
     maxCharacters > 0 &&
