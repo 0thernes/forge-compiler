@@ -193,8 +193,8 @@ its read-only portable build, archive/SBOM/checksum creation, and artifact
 handoff without receiving a write token. On a version tag or protected manual
 retry, the `Verify and package` job also confirms the tag, versions, and `main`
 ancestry. It builds with relative asset paths, validates the portable bundle and
-its Markdown links, installs the portable guide as the archive `README.md`, and
-produces the release assets.
+its Markdown links, renders the portable guide as a relocation-aware archive
+`README.md`, and produces the release assets.
 
 Those assets cross an Actions artifact boundary to a permissionless
 `Validate packaged assets` job, which downloads them and checks every recorded

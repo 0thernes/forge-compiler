@@ -89,8 +89,8 @@ jobs:
           zipfile="forge-compiler-v${version}.zip"
           sbom="forge-compiler-v${version}.cdx.json"
           install -m 0644 CHANGELOG.md CONTRIBUTING.md LICENSE SECURITY.md dist/
-          install -m 0644 docs/PORTABLE-RELEASE.md dist/README.md
           cp -R docs dist/docs
+          node scripts/prepare-portable-readme.mjs dist/README.md
           node scripts/verify-artifact.mjs dist --portable
           node scripts/verify-docs.mjs dist
           tar -czf "${archive}" -C dist .
