@@ -52,3 +52,11 @@ license and the project documentation linked from its README.
 
 Workflow reruns may replace assets only while the release remains a draft.
 Published release assets and the associated tag are locked.
+
+If a tag-triggered workflow fails before creating the draft, fix the workflow
+through the normal protected-branch review and retry the existing immutable tag
+without moving it:
+
+```bash
+gh workflow run release.yml --ref main -f tag=v14.0.0
+```
