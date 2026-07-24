@@ -39,14 +39,16 @@ license and the project documentation linked from its README.
 1. Confirm the Release workflow succeeded.
 2. Download the assets and verify `SHA256SUMS`.
 3. Review the generated release notes and draft title.
-4. Publish the existing draft:
+4. Confirm repository release immutability is enabled, then publish the
+   existing draft:
 
    ```bash
    gh release edit v14.0.0 --draft=false --latest
    ```
 
 5. Confirm the published tag and release target the intended `main` commit.
-   Pages deploys from `main`, independently of the release tag.
+   GitHub should mark the release **Immutable**. Pages deploys from `main`,
+   independently of the release tag.
 
 Workflow reruns may replace assets only while the release remains a draft.
-Published release assets are deliberately left untouched.
+Published release assets and the associated tag are locked.

@@ -481,6 +481,8 @@ describe("lexer and formatter hardening", () => {
   });
 
   it("marks truncated final children instead of displaying empty values", () => {
+    expect(formatValue(["a", "b"], { maxCharacters: 7 })).toBe("[…, …]");
+    expect(formatValue([[1], [2]], { maxCharacters: 7 })).toBe("[…, …]");
     expect(formatValue(["a", "b"], { maxCharacters: 9 })).toBe('["a", …]');
     expect(formatValue(["abcdef", "ghijkl"], { maxCharacters: 14 })).toBe(
       '["abcdef", …]',
@@ -496,6 +498,10 @@ describe("lexer and formatter hardening", () => {
     ).toBe("[[1, 2], …]");
     expect(formatValue("nonempty", { maxCharacters: 2 })).toBe("…");
     expect(formatValue([1], { maxCharacters: 2 })).toBe("…");
+    expect(formatValue([], { maxCharacters: 0 })).toBe("");
+    expect(formatValue([], { maxCharacters: 1 })).toBe("…");
+    expect(formatValue("", { maxCharacters: 2 })).toBe('""');
+    expect(formatValue([], { maxCharacters: 2 })).toBe("[]");
   });
 });
 

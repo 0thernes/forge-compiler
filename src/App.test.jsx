@@ -76,6 +76,7 @@ describe("ForgeCompiler interface", () => {
         document.getElementById(tab.getAttribute("aria-controls")),
       ).not.toBeNull();
     }
+    expect(screen.getByRole("tabpanel")).toHaveAttribute("tabindex", "0");
   });
 
   it("runs source through the complete pipeline", async () => {
@@ -86,6 +87,24 @@ describe("ForgeCompiler interface", () => {
     expect(screen.getByText("halted")).toBeInTheDocument();
     expect(screen.getByText(/a = \[10, 20, 30\]/)).toBeInTheDocument();
     expect(screen.getByText("Final global state")).toBeInTheDocument();
+    expect(
+      screen.getByRole("region", { name: "Program output" }),
+    ).toHaveAttribute("tabindex", "0");
+
+    fireEvent.click(screen.getByRole("tab", { name: "AST" }));
+    expect(
+      screen.getByRole("region", { name: "Abstract syntax tree" }),
+    ).toHaveAttribute("tabindex", "0");
+
+    fireEvent.click(screen.getByRole("tab", { name: "Assembly" }));
+    expect(
+      screen.getByRole("table", { name: "Generated assembly" }),
+    ).toHaveAttribute("tabindex", "0");
+
+    fireEvent.click(screen.getByRole("tab", { name: "Trace" }));
+    expect(
+      screen.getByRole("region", { name: "Execution trace" }),
+    ).toHaveAttribute("tabindex", "0");
   });
 
   it("clears stale results and reports a structured compiler error", async () => {

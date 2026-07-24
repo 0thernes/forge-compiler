@@ -80,7 +80,8 @@ npm run dev
 Pushes and pull requests run the quality gate with SHA-pinned actions. A
 successful `main` build is the only artifact deployed to Pages. Version tags
 also produce portable archives, a build-dependency CycloneDX SBOM, checksums,
-and a draft GitHub Release.
+and a draft GitHub Release. Publication makes the release tag and assets
+immutable.
 
 ## Pipeline
 

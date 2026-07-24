@@ -67,8 +67,11 @@ export function formatValue(value, options = {}) {
   let remainingItems = maxItems;
 
   function quotedString(current, budget) {
+    if (current.length === 0 && budget >= 2) {
+      return { text: '""', complete: true };
+    }
     if (budget === 0) return { text: "", complete: false };
-    if (budget === 1) return { text: "…", complete: false };
+    if (budget <= 2) return { text: "…", complete: false };
 
     const contentBudget = budget - 2;
     const parts = [];
@@ -91,7 +94,6 @@ export function formatValue(value, options = {}) {
   function boundedArrayMarker(marker, budget) {
     if (marker.length <= budget) return marker;
     if (budget >= 3) return "[…]";
-    if (budget >= 2) return "[]";
     return "…".slice(0, budget);
   }
 
@@ -130,6 +132,11 @@ export function formatValue(value, options = {}) {
         complete: text.length <= budget,
       };
     }
+    if (current.length === 0) {
+      return budget >= 2
+        ? { text: "[]", complete: true }
+        : { text: "…".slice(0, budget), complete: false };
+    }
     if (ancestors.has(current)) {
       return {
         text: boundedArrayMarker("[...]", budget),
@@ -142,7 +149,7 @@ export function formatValue(value, options = {}) {
         complete: false,
       };
     }
-    if (budget < 2) {
+    if (budget < 3) {
       return {
         text: "…".slice(0, budget),
         complete: false,
