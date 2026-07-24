@@ -86,6 +86,7 @@ describe("lexer", () => {
 
   it("rejects unexpected characters with position info", () => {
     expect(() => lex(`let x = @;`)).toThrow("Unexpected char '@' at line 1:9");
+    expect(() => lex("😀")).toThrow("Unexpected char '😀' at line 1:1");
   });
 
   it("treats keywords case-sensitively (While is an identifier)", () => {

@@ -1,6 +1,6 @@
 {
   "name": "forge-compiler",
-  "version": "14.0.0",
+  "version": "14.0.1",
   "private": true,
   "description": "A browser-based educational compiler and deterministic stack virtual machine for the FORGE language.",
   "license": "MIT",
@@ -20,11 +20,14 @@
     "lint": "eslint . --max-warnings=0",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
+    "check:docs": "node scripts/verify-docs.mjs",
+    "check:artifact": "node scripts/verify-artifact.mjs dist",
+    "verify:metadata": "node scripts/verify-release.mjs --metadata-only",
     "test": "vitest run",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
-    "verify:quality": "npm run format:check && npm run lint && npm run test:coverage",
-    "verify": "npm run verify:quality && npm run build"
+    "verify:quality": "npm run format:check && npm run lint && npm run check:docs && npm run verify:metadata && npm run test:coverage",
+    "verify": "npm run verify:quality && npm run build && npm run check:artifact"
   },
   "engines": {
     "node": "^24.0.0",
@@ -33,7 +36,7 @@
   "devEngines": {
     "runtime": {
       "name": "node",
-      "version": "^24.0.0",
+      "version": "24.18.0",
       "onFail": "warn"
     },
     "packageManager": {
@@ -42,7 +45,7 @@
       "onFail": "error"
     }
   },
-  "packageManager": "npm@11.11.1",
+  "packageManager": "npm@11.18.0",
   "dependencies": {
     "react": "19.2.8",
     "react-dom": "19.2.8"

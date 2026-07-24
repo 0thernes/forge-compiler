@@ -227,6 +227,7 @@ export default function ForgeCompiler() {
       }
       setCompilation(nextCompilation);
       setActiveTab("output");
+      tabRefs.current.get("output")?.focus();
     } catch (nextError) {
       if (
         !mounted.current ||
@@ -326,8 +327,10 @@ export default function ForgeCompiler() {
             `${editor.value.slice(0, start)}  ${editor.value.slice(end)}`,
           );
         } else {
+          const effectiveEnd =
+            end > start && editor.value[end - 1] === "\n" ? end - 1 : end;
           const lineStart = editor.value.lastIndexOf("\n", start - 1) + 1;
-          const selected = editor.value.slice(lineStart, end);
+          const selected = editor.value.slice(lineStart, effectiveEnd);
           const indented = selected.replace(/^/gm, "  ");
           const addedCharacters = indented.length - selected.length;
           pendingSelection.current = {
@@ -335,16 +338,22 @@ export default function ForgeCompiler() {
             end: end + addedCharacters,
           };
           updateSource(
-            `${editor.value.slice(0, lineStart)}${indented}${editor.value.slice(end)}`,
+            `${editor.value.slice(0, lineStart)}${indented}${editor.value.slice(effectiveEnd)}`,
           );
         }
       }
+    },
+    [updateSource],
+  );
+
+  const handleAppKeyDown = useCallback(
+    (event) => {
       if ((event.ctrlKey || event.metaKey) && event.key === "Enter") {
         event.preventDefault();
-        void runCompilation();
+        if (!event.repeat) void runCompilation();
       }
     },
-    [runCompilation, updateSource],
+    [runCompilation],
   );
 
   const loadExample = useCallback(
@@ -384,7 +393,7 @@ export default function ForgeCompiler() {
   );
 
   return (
-    <main className="app-shell">
+    <main className="app-shell" onKeyDown={handleAppKeyDown}>
       <header className="app-header">
         <div className="brand-lockup">
           <span className="brand-mark" aria-hidden="true">
@@ -452,32 +461,39 @@ export default function ForgeCompiler() {
         <span className="pipeline-strip__mode">deterministic VM</span>
       </section>
 
-      {verification && (
-        <div
-          className={`notice ${verification.ok ? "notice--success" : "notice--error"}`}
-          role="status"
-          aria-live="polite"
-        >
-          <span aria-hidden="true">{verification.ok ? "✓" : "×"}</span>
-          {verification.ok ? (
-            <p>
-              Self-test passed: {verification.exampleCount} examples and{" "}
-              {verification.assertionCount} assertions in{" "}
-              {formatMilliseconds(verification.durationMilliseconds)}. The
-              repository workflow runs the full release gate when hosted on
-              GitHub.
-            </p>
-          ) : (
-            <p>
-              {verification.failures?.length ?? 1} self-test failure(s):{" "}
-              {verification.failures
-                ?.slice(0, 3)
-                .map((failure) => `${failure.name}: ${failure.message}`)
-                .join(" · ")}
-            </p>
-          )}
-        </div>
-      )}
+      <div
+        className={
+          verification
+            ? `notice ${verification.ok ? "notice--success" : "notice--error"}`
+            : undefined
+        }
+        role="status"
+        aria-live="polite"
+        aria-label="Verification status"
+      >
+        {verification && (
+          <>
+            <span aria-hidden="true">{verification.ok ? "✓" : "×"}</span>
+            {verification.ok ? (
+              <p>
+                Self-test passed: {verification.exampleCount} examples and{" "}
+                {verification.assertionCount} assertions in{" "}
+                {formatMilliseconds(verification.durationMilliseconds)}. The
+                repository workflow runs the full release gate when hosted on
+                GitHub.
+              </p>
+            ) : (
+              <p>
+                {verification.failures?.length ?? 1} self-test failure(s):{" "}
+                {verification.failures
+                  ?.slice(0, 3)
+                  .map((failure) => `${failure.name}: ${failure.message}`)
+                  .join(" · ")}
+              </p>
+            )}
+          </>
+        )}
+      </div>
 
       {error && (
         <div className="notice notice--error" role="alert">
@@ -489,12 +505,19 @@ export default function ForgeCompiler() {
         </div>
       )}
 
-      {isStale && (
-        <div className="notice notice--warning" role="status">
-          <span aria-hidden="true">!</span>
-          <p>Source changed after the last run. Inspector data is stale.</p>
-        </div>
-      )}
+      <div
+        className={isStale ? "notice notice--warning" : undefined}
+        role="status"
+        aria-live="polite"
+        aria-label="Source freshness"
+      >
+        {isStale && (
+          <>
+            <span aria-hidden="true">!</span>
+            <p>Source changed after the last run. Inspector data is stale.</p>
+          </>
+        )}
+      </div>
 
       <nav
         className="tab-bar"
@@ -720,7 +743,7 @@ export default function ForgeCompiler() {
 
         {activeTab === "output" &&
           (compilation ? (
-            <div className="inspector-panel output-panel">
+            <div className="inspector-panel">
               <div className="metric-grid">
                 <div>
                   <span>Termination</span>

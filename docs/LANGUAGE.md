@@ -1,6 +1,6 @@
 # FORGE language reference
 
-This document describes the behavior implemented by FORGE v14.0.0.
+This document describes the behavior implemented by FORGE v14.0.1.
 
 ## Lexical rules
 
@@ -57,7 +57,8 @@ comparison     = addition, { ( "<" | ">" | "<=" | ">=" ), addition } ;
 addition       = multiplication, { ( "+" | "-" ), multiplication } ;
 multiplication = unary, { ( "*" | "/" | "%" ), unary } ;
 unary          = ( "-" | "!" ), unary | postfix ;
-postfix        = ( IDENT, [ "(", [ arguments ], ")" ] | primary ),
+callTarget     = IDENT | "(", callTarget, ")" ;
+postfix        = ( callTarget, "(", [ arguments ], ")" | primary ),
                  { "[", expression, "]" } ;
 primary        = NUMBER | STRING | "true" | "false"
                | array | IDENT | "(", expression, ")" ;
@@ -66,8 +67,10 @@ arguments      = expression, { ",", expression } ;
 parameters     = IDENT, { ",", IDENT } ;
 ```
 
-Only identifiers name callable functions. Functions and indexed values are not
-first-class callable values.
+Only identifiers name callable functions; the identifier may be redundantly
+parenthesized, so `(f)(3)` is equivalent to `f(3)`. Functions and indexed
+values are not first-class callable values: the result of a call or an index
+expression is not itself callable.
 
 ## Values
 
@@ -93,11 +96,18 @@ deterministic.
 
 ## Variables and scope
 
-`let` creates a binding in the current block. A name cannot be declared twice in
-the same block, but a nested block may shadow it. Assignments require an
-existing binding. A variable becomes available after its declaration and
-initializer; forward reads and self-referencing initializers are semantic
-errors, including in unreachable code.
+`let` creates a binding in the current block. Function names and variable names
+live in separate namespaces: a variable name cannot be declared twice with
+`let` in the same block, and a function name cannot be declared twice with `fn`
+in the same block, but a variable and a function may share a name. A call
+`f(...)` resolves to the function, while reading or assigning `f` resolves to
+the variable. A nested block may shadow either kind of name. Assignments
+require an existing binding. A variable becomes available after its
+declaration and initializer. Direct forward reads and direct self-referencing
+initializers are semantic errors, including in unreachable code. FORGE does
+not perform interprocedural definite-initialization analysis: if an
+initializer invokes a function that reads the binding currently being
+initialized, execution fails deterministically with an `execute` error.
 
 Functions use lexical scope: a function resolves variables through the
 environment where it was declared, not through its caller. Nested functions can
@@ -158,10 +168,14 @@ Strings are immutable and cannot be index-assigned.
 
 ## Output
 
-`print` formats each argument without an automatic separator, concatenates
-them, and completes one output record. `print();` emits an empty record. Strings
-print without quotes; strings inside arrays are quoted and escaped. Cyclic
-arrays are represented safely.
+`print` evaluates and formats its arguments from left to right without an
+automatic separator, concatenates them, and then emits one output record. If a
+function called while evaluating an argument prints its own record, that nested
+record completes first; the outer record resumes afterward without sharing or
+corrupting the nested record. Formatting an earlier mutable array therefore
+captures its value before a later argument can mutate it. `print();` emits an
+empty record. Strings print without quotes; strings inside arrays are quoted and
+escaped. Cyclic arrays are represented safely.
 
 ## Compiler API
 
@@ -182,9 +196,10 @@ end.
 
 Failures identify their compiler phase:
 
+- `compile`: invalid limit containers, names, or values;
 - `lex`: invalid characters, strings, numbers, or input limits;
-- `parse`: invalid grammar or nesting;
-- `analyze`: names, declarations, arity, and control-flow context;
+- `parse`: invalid grammar, nesting, or `return` outside a function;
+- `analyze`: names, declarations, arity, and `break`/`continue` loop context;
 - `codegen` / `link`: instruction and label integrity;
 - `execute`: types, bounds, arithmetic, stacks, calls, and runtime limits.
 
@@ -216,6 +231,12 @@ Limits can be overridden through `compileSource(source, { limits })`.
 | Formatted characters            |    20,000 |
 
 Normal completion has status `halted`. Exhausting the step budget has status
-`step_limit`; the output retains the historical
-`[EXECUTION LIMIT REACHED]` marker for v13 compatibility. Output and trace
-limits set explicit truncation flags on the result.
+`step_limit`. When the output quota permits, the output retains the historical
+`[EXECUTION LIMIT REACHED]` marker for v13 compatibility; otherwise the normal
+output truncation marker and flags replace it while the status remains
+`step_limit`. Output and trace limits set explicit `outputTruncated` and
+`traceOverflow` flags on the result. Formatted values and retained trace strings
+are hard-capped.
+`maxOutputCharacters` and `maxOutputLines` cap program-produced output and its
+record separators. Fixed truncation markers may exceed those numeric budgets;
+they are bounded diagnostic metadata signaled by the result status and flags.

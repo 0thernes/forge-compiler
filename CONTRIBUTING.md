@@ -2,7 +2,9 @@
 
 ## Development setup
 
-Use Node.js 24 and the npm version recorded in `package.json`.
+Use the pinned Node.js 24.18.0 LTS and npm 11.18.0 toolchain. Node.js 24 LTS is
+the supported development line; the exact npm version is recorded in
+`package.json`.
 
 ```bash
 npm ci
@@ -30,8 +32,8 @@ change should include:
 5. compatibility notes when v13 behavior changes.
 
 Do not silently accept invalid source in unreachable branches. Static errors
-belong in the analyzer when they can be known before execution. Runtime errors
-should use `ForgeError` codes and must not expose host APIs.
+belong in the earliest compiler phase that has enough context to diagnose them.
+Runtime errors should use `ForgeError` codes and must not expose host APIs.
 
 ## Pull requests
 

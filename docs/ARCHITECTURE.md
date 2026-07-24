@@ -33,19 +33,22 @@ position when available.
 
 ## Module map
 
-| Module               | Responsibility                                                 |
-| -------------------- | -------------------------------------------------------------- |
-| `constants.js`       | Tokens, built-ins, opcodes, version, and default limits        |
-| `lexer.js`           | Tokenization and source positions                              |
-| `parser.js`          | Recursive-descent parsing and AST construction                 |
-| `analyze.js`         | Lexical scopes, declaration checks, call resolution, and arity |
-| `codegen.js`         | Assembly generation, internal labels, and immutable linking    |
-| `vm.js`              | Iterative stack-machine execution and resource enforcement     |
-| `format.js`          | Bounded, cycle-aware value rendering                           |
-| `ast.js`             | Human-readable AST rendering                                   |
-| `index.js`           | Stable public API and pipeline orchestration                   |
-| `compiler.worker.js` | Browser worker request boundary                                |
-| `selfTest.js`        | Browser-visible compatibility verification                     |
+| Module               | Responsibility                                                  |
+| -------------------- | --------------------------------------------------------------- |
+| `constants.js`       | Tokens, built-ins, opcodes, version, and default limits         |
+| `errors.js`          | `ForgeError` type, position formatting, and error normalization |
+| `lexer.js`           | Tokenization and source positions                               |
+| `parser.js`          | Recursive-descent parsing and AST construction                  |
+| `analyze.js`         | Lexical scopes, declaration checks, call resolution, and arity  |
+| `codegen.js`         | Assembly generation, internal labels, and immutable linking     |
+| `vm.js`              | Iterative stack-machine execution and resource enforcement      |
+| `format.js`          | Bounded, cycle-aware value rendering                            |
+| `ast.js`             | Human-readable AST rendering                                    |
+| `index.js`           | Stable public API and pipeline orchestration                    |
+| `compiler.worker.js` | Browser worker request boundary                                 |
+| `selfTest.js`        | Browser-visible compatibility verification                      |
+| `selfTestCases.js`   | Canonical self-test corpus consumed by `selfTest.js`            |
+| `examples.js`        | Canonical examples projected by the `src/examples.js` adapter   |
 
 The files in `src/examples.js`, `src/self-test.js`, and the older helper module
 names are compatibility adapters. They project the canonical corpora and
@@ -79,11 +82,23 @@ Every call frame stores:
 - the caller scope;
 - the operand-stack base;
 - the received argument count;
-- the internal function label.
+- the internal function label;
+- any incomplete caller output record and its quota state.
 
 On return, the VM truncates the operand stack to the saved base, pushes exactly
 one result, restores the caller scope, and resumes at the saved address. The VM
 is iterative, so FORGE recursion does not consume the JavaScript call stack.
+
+## Atomic output records
+
+Code generation evaluates and formats every `print` argument from left to right
+with the compatibility `PRINT` instruction, then completes the record with
+`PRINT_LINE`. When a call begins, its VM frame isolates any incomplete caller
+record; returning restores that exact record and quota state. A function called
+from an argument can therefore emit its own complete record without sharing or
+corrupting the pending outer record. This preserves v13 mutation and operand
+stack behavior, and a zero-argument `PRINT_LINE` preserves the `print();`
+empty-record behavior.
 
 ## Label safety
 
@@ -109,8 +124,11 @@ constructing an oversized intermediate value.
 Trace snapshots deep-copy arrays within explicit depth and item limits. This
 keeps historical rows stable after later mutation without allowing the
 inspector itself to grow without bound. Per-string and whole-trace character
-budgets also prevent repeated stack snapshots from amplifying a large literal
-across the Worker boundary.
+budgets count retained opcode and argument aliases, stack truncation markers,
+and captured values, preventing repeated snapshots from amplifying strings
+across the Worker boundary. Output status markers use the same bounded
+accounting path as program output and expose explicit truncation flags and
+reasons.
 
 ## Browser boundary
 
@@ -139,12 +157,27 @@ Vitest exercises:
 - compiler stage contracts, limits, and trace behavior;
 - accessible React interactions.
 
-One CI workflow checks formatting, ESLint, coverage thresholds, dependency
-audit, and a production build on every main-branch push and pull request. Only
-the verified `main` artifact can flow to the serialized Pages deployment job.
-A tag workflow verifies package/compiler versions and confirms that the tag
-commit belongs to `main`, builds a portable bundle, generates a CycloneDX SBOM
-for the build dependency graph plus checksums, and creates a draft release.
-Published release assets are never silently replaced; repository release
-immutability locks both the tag and assets at publication. Dependabot covers
-both npm and GitHub Actions dependencies.
+The local quality gate checks formatting, environment-specific ESLint rules,
+local Markdown links, synchronized package/lock/compiler versions, coverage
+thresholds, a production build, and its expected artifact contents. One CI
+workflow runs that gate plus the dependency audit on every main-branch push and
+pull request. Only the verified `main` artifact can flow to the serialized Pages
+deployment job.
+
+The Release workflow separates validation from mutation. Pull requests exercise
+its read-only portable build, archive/SBOM/checksum creation, and artifact
+handoff without receiving a write token. On a version tag or protected manual
+retry, the `Verify and package` job also confirms the tag, versions, and `main`
+ancestry. It builds with relative asset paths, validates the portable bundle and
+its Markdown links, installs the portable guide as the archive `README.md`, and
+produces the release assets.
+
+Those assets cross an Actions artifact boundary to a permissionless
+`Validate packaged assets` job, which downloads them and checks every recorded
+SHA-256 digest. The dependent publishing job downloads and checks them once
+more; it is skipped on pull requests and alone receives `contents: write`.
+
+The publishing job may create a draft or replace assets on an existing draft,
+making a workflow retry safe. It refuses to modify an already-published release;
+repository release immutability then locks both the tag and assets. Dependabot
+covers both npm and GitHub Actions dependencies.

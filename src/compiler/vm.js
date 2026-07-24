@@ -339,25 +339,39 @@ function runLinkedCode(code, limits) {
     }
   }
 
-  function captureTraceString(value) {
+  function coerceForConcatenation(value) {
+    return formatForPrint(value, {
+      maxCharacters: Math.min(
+        limits.maxFormatCharacters,
+        limits.maxStringLength,
+      ),
+      maxItems: limits.maxFormatItems,
+      maxDepth: limits.maxFormatDepth,
+    });
+  }
+
+  function captureTraceString(value, copies = 1) {
     const remainingTotal = Math.max(
       0,
       limits.maxTraceCharacters - traceCharacters,
     );
-    const allowed = Math.min(limits.maxTraceValueCharacters, remainingTotal);
+    const allowed = Math.min(
+      limits.maxTraceValueCharacters,
+      Math.floor(remainingTotal / copies),
+    );
     if (value.length <= allowed) {
-      traceCharacters += value.length;
+      traceCharacters += value.length * copies;
       return value;
     }
 
     traceOverflow = true;
-    if (allowed === 0) return "…";
+    if (allowed === 0) return "";
     if (allowed === 1) {
-      traceCharacters += 1;
+      traceCharacters += copies;
       return "…";
     }
     const captured = `${value.slice(0, allowed - 1)}…`;
-    traceCharacters += captured.length;
+    traceCharacters += captured.length * copies;
     return captured;
   }
 
@@ -370,12 +384,14 @@ function runLinkedCode(code, limits) {
       if (typeof value === "string") return captureTraceString(value);
       if (!Array.isArray(value)) return value;
       if (seen.has(value)) return seen.get(value);
-      if (depth >= limits.maxFormatDepth || remainingItems <= 0) return ["…"];
+      if (depth >= limits.maxFormatDepth || remainingItems <= 0) {
+        return [captureTraceString("…")];
+      }
       const clone = [];
       seen.set(value, clone);
       for (const item of value) {
         if (remainingItems <= 0) {
-          clone.push("…");
+          clone.push(captureTraceString("…"));
           break;
         }
         remainingItems -= 1;
@@ -385,7 +401,9 @@ function runLinkedCode(code, limits) {
     }
 
     const captured = stack.slice(omitted).map((value) => snapshot(value));
-    if (omitted > 0) captured.unshift(`… ${omitted} earlier value(s)`);
+    if (omitted > 0) {
+      captured.unshift(captureTraceString(`… ${omitted} earlier value(s)`));
+    }
     return captured;
   }
 
@@ -449,6 +467,38 @@ function runLinkedCode(code, limits) {
     printLine = "";
   }
 
+  function appendPrintText(value) {
+    if (!outputTruncated && pendingOutputTruncation === null) {
+      const separatorCharacters = output.length > 0 ? 1 : 0;
+      const remainingCharacters = Math.max(
+        0,
+        limits.maxOutputCharacters -
+          outputCharacters -
+          separatorCharacters -
+          printLine.length,
+      );
+      if (value.length > remainingCharacters) {
+        printLine += value.slice(0, remainingCharacters);
+        pendingOutputTruncation = "characters";
+      } else {
+        printLine += value;
+      }
+    } else if (!outputTruncated) {
+      // A previous value already filled the current output budget.
+      pendingOutputTruncation = "characters";
+    }
+  }
+
+  function appendPrintValue(value) {
+    appendPrintText(
+      formatForPrint(value, {
+        maxDepth: limits.maxFormatDepth,
+        maxItems: limits.maxFormatItems,
+        maxCharacters: limits.maxFormatCharacters,
+      }),
+    );
+  }
+
   while (programCounter < code.length && status === "running") {
     if (steps >= limits.maxSteps) {
       status = "step_limit";
@@ -457,16 +507,19 @@ function runLinkedCode(code, limits) {
 
     const instruction = code[programCounter];
     const shouldCaptureTrace = trace.length < limits.maxTraceEntries;
+    const capturedOpcode = shouldCaptureTrace
+      ? captureTraceString(instruction.opcode, 2)
+      : null;
     const capturedArgument =
       shouldCaptureTrace && typeof instruction.argument === "string"
-        ? captureTraceString(instruction.argument)
+        ? captureTraceString(instruction.argument, 2)
         : instruction.argument;
     const traceEntry = shouldCaptureTrace
       ? {
           programCounter,
           pc: programCounter,
-          opcode: instruction.opcode,
-          op: instruction.opcode,
+          opcode: capturedOpcode,
+          op: capturedOpcode,
           argument: capturedArgument,
           arg: capturedArgument,
           stackBefore: captureStack(),
@@ -667,16 +720,7 @@ function runLinkedCode(code, limits) {
           pushNumberResult(left + right, "+");
         } else if (typeof left === "string" || typeof right === "string") {
           const value =
-            formatForPrint(left, {
-              maxCharacters: limits.maxStringLength,
-              maxItems: limits.maxFormatItems,
-              maxDepth: limits.maxFormatDepth,
-            }) +
-            formatForPrint(right, {
-              maxCharacters: limits.maxStringLength,
-              maxItems: limits.maxFormatItems,
-              maxDepth: limits.maxFormatDepth,
-            });
+            coerceForConcatenation(left) + coerceForConcatenation(right);
           if (value.length > limits.maxStringLength) {
             throw runtimeError(
               `String length exceeds the ${limits.maxStringLength} character limit`,
@@ -815,8 +859,12 @@ function runLinkedCode(code, limits) {
           stackBase: stack.length - pendingArgumentCount,
           argumentCount: pendingArgumentCount,
           functionLabel: instruction.argument,
+          callerPrintLine: printLine,
+          callerPendingOutputTruncation: pendingOutputTruncation,
         });
         pendingArgumentCount = 0;
+        printLine = "";
+        pendingOutputTruncation = null;
         currentScope = binding.environment;
         programCounter = instruction.target;
         break;
@@ -832,35 +880,14 @@ function runLinkedCode(code, limits) {
         }
         stack.length = frame.stackBase;
         push(result, "RETURN");
+        printLine = frame.callerPrintLine;
+        pendingOutputTruncation = frame.callerPendingOutputTruncation;
         currentScope = frame.callerScope;
         programCounter = frame.returnProgramCounter;
         break;
       }
       case "PRINT": {
-        const value = formatForPrint(pop("PRINT"), {
-          maxDepth: limits.maxFormatDepth,
-          maxItems: limits.maxFormatItems,
-          maxCharacters: limits.maxStringLength,
-        });
-        if (!outputTruncated && pendingOutputTruncation === null) {
-          const separatorCharacters = output.length > 0 ? 1 : 0;
-          const remainingCharacters = Math.max(
-            0,
-            limits.maxOutputCharacters -
-              outputCharacters -
-              separatorCharacters -
-              printLine.length,
-          );
-          if (value.length > remainingCharacters) {
-            printLine += value.slice(0, remainingCharacters);
-            pendingOutputTruncation = "characters";
-          } else {
-            printLine += value;
-          }
-        } else if (!outputTruncated) {
-          // A previous argument already filled the current output budget.
-          pendingOutputTruncation = "characters";
-        }
+        appendPrintValue(pop("PRINT"));
         programCounter += 1;
         break;
       }
@@ -996,7 +1023,12 @@ function runLinkedCode(code, limits) {
     status = "halted";
   }
   if (status === "step_limit") {
-    output.push("[EXECUTION LIMIT REACHED]");
+    // Discard any incomplete compatibility PRINT sequence, then account for
+    // the execution-limit marker like any other output record.
+    printLine = "";
+    pendingOutputTruncation = null;
+    appendPrintText("[EXECUTION LIMIT REACHED]");
+    finishPrintLine();
   }
 
   const globals = Object.create(null);

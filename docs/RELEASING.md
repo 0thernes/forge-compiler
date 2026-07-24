@@ -8,15 +8,23 @@ draft before publication.
 1. Start from a clean `main` branch that matches `origin/main`.
 2. Update the version in `package.json`, `package-lock.json`, and
    `src/compiler/constants.js`, then finalize the matching changelog entry.
-3. Use the declared Node 24/npm 11 toolchain and run:
+3. Derive the tag from the package version. The commands below assume the same
+   shell session; repeat these two assignments after opening a new shell:
+
+   ```bash
+   VERSION="$(node -p "require('./package.json').version")"
+   TAG="v${VERSION}"
+   ```
+
+4. Use the pinned Node.js 24.18.0 LTS/npm 11.18.0 toolchain and run:
 
    ```bash
    npm ci
    npm run verify
-   node scripts/verify-release.mjs v14.0.0
+   node scripts/verify-release.mjs "$TAG"
    ```
 
-4. Push `main` and wait for the **CI and Pages** workflow to finish
+5. Push `main` and wait for the **CI and Pages** workflow to finish
    successfully.
 
 ## Draft
@@ -24,15 +32,22 @@ draft before publication.
 Create and push an annotated version tag:
 
 ```bash
-git tag -a v14.0.0 -m "FORGE v14.0.0"
-git push origin v14.0.0
+git tag -a "$TAG" -m "FORGE $TAG"
+git push origin "$TAG"
 ```
 
 The **Release** workflow rejects a version mismatch or a tag commit that is not
 on `main`. It reruns the quality gate, builds a relative-path portable bundle,
 and attaches `.tar.gz` and `.zip` archives, a build-dependency CycloneDX SBOM,
-and SHA-256 checksums to a draft GitHub Release. Each archive includes the MIT
-license and the project documentation linked from its README.
+and SHA-256 checksums to a draft GitHub Release.
+
+The archives contain a prebuilt static browser application, not a source
+checkout: they intentionally omit `src/`, `package.json`, tests, and the npm
+toolchain. Packaging must install
+[`PORTABLE-RELEASE.md`](PORTABLE-RELEASE.md) as the archive's `README.md` and
+include the MIT license plus its linked project documentation. Validate the
+archive as a static site; do not test its instructions as though it were an npm
+project.
 
 ## Inspect and publish
 
@@ -43,7 +58,7 @@ license and the project documentation linked from its README.
    existing draft:
 
    ```bash
-   gh release edit v14.0.0 --draft=false --latest
+   gh release edit "$TAG" --draft=false --latest
    ```
 
 5. Confirm the published tag and release target the intended `main` commit.
@@ -58,5 +73,5 @@ through the normal protected-branch review and retry the existing version tag
 without moving it:
 
 ```bash
-gh workflow run release.yml --ref main -f tag=v14.0.0
+gh workflow run release.yml --ref main -f "tag=$TAG"
 ```
