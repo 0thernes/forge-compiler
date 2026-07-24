@@ -1,65 +1,265 @@
-import { T, KEYWORDS, ESCAPE_MAP } from "./constants.js";
+import {
+  DEFAULT_LIMITS,
+  TOKEN,
+  keywordToken,
+  mergeLimits,
+} from "./constants.js";
+import { ForgeError, atPosition } from "./errors.js";
 
-// ── LEXER ──
-export function lex(src) {
+const ESCAPES = new Map([
+  ["n", "\n"],
+  ["t", "\t"],
+  ["r", "\r"],
+  ["\\", "\\"],
+  ['"', '"'],
+  ["0", "\0"],
+]);
+
+const TWO_CHARACTER_TOKENS = new Set([
+  "==",
+  "!=",
+  "<=",
+  ">=",
+  "&&",
+  "||",
+  "+=",
+  "-=",
+  "*=",
+  "/=",
+  "%=",
+]);
+
+const SINGLE_CHARACTER_TOKENS = new Map([
+  ["+", TOKEN.PLUS],
+  ["-", TOKEN.MINUS],
+  ["*", TOKEN.STAR],
+  ["/", TOKEN.SLASH],
+  ["%", TOKEN.MODULO],
+  ["=", TOKEN.ASSIGN],
+  ["(", TOKEN.LEFT_PAREN],
+  [")", TOKEN.RIGHT_PAREN],
+  ["{", TOKEN.LEFT_BRACE],
+  ["}", TOKEN.RIGHT_BRACE],
+  ["[", TOKEN.LEFT_BRACKET],
+  ["]", TOKEN.RIGHT_BRACKET],
+  [",", TOKEN.COMMA],
+  [";", TOKEN.SEMICOLON],
+  ["!", TOKEN.NOT],
+  ["<", TOKEN.LESS],
+  [">", TOKEN.GREATER],
+]);
+
+function lexError(message, position, code) {
+  return new ForgeError(atPosition(message, position), {
+    phase: "lex",
+    position,
+    code,
+  });
+}
+
+export function lex(source, limitOverrides = {}) {
+  if (typeof source !== "string") {
+    throw new ForgeError("Source must be a string", {
+      phase: "lex",
+      code: "LEX_SOURCE_TYPE",
+    });
+  }
+
+  const limits = mergeLimits(limitOverrides);
+  if (source.length > limits.maxSourceLength) {
+    throw new ForgeError(
+      `Source exceeds the ${limits.maxSourceLength} character limit`,
+      { phase: "lex", code: "LEX_SOURCE_LIMIT" },
+    );
+  }
+
   const tokens = [];
-  let i = 0, line = 1, col = 1;
-  while (i < src.length) {
-    if (src[i] === '\n') { line++; col = 1; i++; continue; }
-    if (/\s/.test(src[i])) { col++; i++; continue; }
-    if (src[i] === '/' && src[i+1] === '/') {
-      while (i < src.length && src[i] !== '\n') { i++; col++; }
+  let index = 0;
+  let line = 1;
+  let column = 1;
+
+  function position() {
+    return { line, column };
+  }
+
+  function push(type, value, start) {
+    if (tokens.length >= limits.maxTokens) {
+      throw lexError(
+        `Token count exceeds the ${limits.maxTokens} token limit`,
+        start,
+        "LEX_TOKEN_LIMIT",
+      );
+    }
+    tokens.push({
+      type,
+      value,
+      position: start,
+      pos: { line: start.line, col: start.column },
+    });
+  }
+
+  while (index < source.length) {
+    const character = source[index];
+
+    if (character === "\n") {
+      line += 1;
+      column = 1;
+      index += 1;
       continue;
     }
-    const start = { line, col };
-    const two = src.slice(i, i+2);
-    if (["==","!=","<=",">=","&&","||","+=","-=","*=","/=","%="].includes(two)) {
-      const type = two === "+=" ? T.PLUS_EQ : two === "-=" ? T.MINUS_EQ : two === "*=" ? T.STAR_EQ : two === "/=" ? T.SLASH_EQ : two === "%=" ? T.MOD_EQ : two;
-      tokens.push({ type, value: two, pos: start }); i += 2; col += 2; continue;
+    if (/\s/u.test(character)) {
+      column += 1;
+      index += 1;
+      continue;
     }
-    // [F1 v13] '[' and ']' join the single-char operator set
-    if ("+-*/%=()<>{},;![]".includes(src[i])) {
-      const ch = src[i];
-      const type = ch === '(' ? T.LPAREN : ch === ')' ? T.RPAREN : ch === '{' ? T.LBRACE : ch === '}' ? T.RBRACE : ch === '[' ? T.LBRACKET : ch === ']' ? T.RBRACKET : ch === ',' ? T.COMMA : ch === ';' ? T.SEMI : ch === '!' ? T.NOT : ch;
-      tokens.push({ type, value: ch, pos: start }); i++; col++; continue;
-    }
-    if (/[0-9]/.test(src[i])) {
-      let num = "";
-      let hasDot = false;
-      while (i < src.length && /[0-9.]/.test(src[i])) {
-        if (src[i] === '.') {
-          if (hasDot) throw new Error(`Invalid number: multiple decimal points at line ${line}:${col}`);
-          hasDot = true;
-        }
-        num += src[i]; i++; col++;
+    if (character === "/" && source[index + 1] === "/") {
+      while (index < source.length && source[index] !== "\n") {
+        index += 1;
+        column += 1;
       }
-      if (num.endsWith('.')) throw new Error(`Invalid number: trailing decimal point at line ${line}:${col - 1}`);
-      tokens.push({ type: T.NUM, value: parseFloat(num), pos: start }); continue;
+      continue;
     }
-    if (src[i] === '"') {
-      let s = ""; i++; col++;
-      while (i < src.length && src[i] !== '"') {
-        if (src[i] === '\\') {
-          i++; col++;
-          if (i >= src.length) throw new Error(`Unterminated escape in string at line ${line}:${col}`);
-          const esc = ESCAPE_MAP[src[i]];
-          if (esc === undefined) throw new Error(`Unknown escape sequence \\${src[i]} at line ${line}:${col}`);
-          s += esc; i++; col++; continue;
+
+    const start = position();
+    const pair = source.slice(index, index + 2);
+    if (TWO_CHARACTER_TOKENS.has(pair)) {
+      push(pair, pair, start);
+      index += 2;
+      column += 2;
+      continue;
+    }
+
+    const singleType = SINGLE_CHARACTER_TOKENS.get(character);
+    if (singleType) {
+      push(singleType, character, start);
+      index += 1;
+      column += 1;
+      continue;
+    }
+
+    if (/[0-9]/u.test(character)) {
+      let raw = "";
+      let hasDecimal = false;
+      while (index < source.length && /[0-9.]/u.test(source[index])) {
+        if (source[index] === ".") {
+          if (hasDecimal) {
+            throw lexError(
+              "Invalid number: multiple decimal points",
+              position(),
+              "LEX_NUMBER_DECIMAL",
+            );
+          }
+          hasDecimal = true;
         }
-        if (src[i] === '\n') { line++; col = 1; }
-        s += src[i]; i++; col++;
+        raw += source[index];
+        index += 1;
+        column += 1;
       }
-      if (i >= src.length) throw new Error(`Unterminated string starting at line ${start.line}:${start.col}`);
-      i++; col++;
-      tokens.push({ type: T.STR, value: s, pos: start }); continue;
+      if (raw.endsWith(".")) {
+        throw lexError(
+          "Invalid number: trailing decimal point",
+          { line, column: column - 1 },
+          "LEX_NUMBER_TRAILING_DECIMAL",
+        );
+      }
+      const value = Number.parseFloat(raw);
+      if (!Number.isFinite(value)) {
+        throw lexError(
+          "Numeric literal is outside the finite number range",
+          start,
+          "LEX_NUMBER_RANGE",
+        );
+      }
+      push(TOKEN.NUMBER, value, start);
+      continue;
     }
-    if (/[a-zA-Z_]/.test(src[i])) {
-      let id = "";
-      while (i < src.length && /[a-zA-Z0-9_]/.test(src[i])) { id += src[i]; i++; col++; }
-      tokens.push({ type: KEYWORDS[id] || T.IDENT, value: id, pos: start }); continue;
+
+    if (character === '"') {
+      let value = "";
+      index += 1;
+      column += 1;
+      while (index < source.length && source[index] !== '"') {
+        if (source[index] === "\\") {
+          index += 1;
+          column += 1;
+          if (index >= source.length) {
+            throw lexError(
+              "Unterminated escape in string",
+              position(),
+              "LEX_STRING_ESCAPE",
+            );
+          }
+          const escaped = ESCAPES.get(source[index]);
+          if (escaped === undefined) {
+            throw lexError(
+              `Unknown escape sequence \\${source[index]}`,
+              position(),
+              "LEX_STRING_ESCAPE_UNKNOWN",
+            );
+          }
+          value += escaped;
+          index += 1;
+          column += 1;
+        } else {
+          if (source[index] === "\n") {
+            line += 1;
+            column = 1;
+            index += 1;
+            value += "\n";
+          } else {
+            value += source[index];
+            index += 1;
+            column += 1;
+          }
+        }
+        if (value.length > limits.maxStringLength) {
+          throw lexError(
+            `String literal exceeds the ${limits.maxStringLength} character limit`,
+            start,
+            "LEX_STRING_LIMIT",
+          );
+        }
+      }
+      if (index >= source.length) {
+        throw lexError("Unterminated string", start, "LEX_STRING_UNTERMINATED");
+      }
+      index += 1;
+      column += 1;
+      push(TOKEN.STRING, value, start);
+      continue;
     }
-    throw new Error(`Unexpected char '${src[i]}' at line ${line}:${col}`);
+
+    if (/[a-zA-Z_]/u.test(character)) {
+      let identifier = "";
+      while (index < source.length && /[a-zA-Z0-9_]/u.test(source[index])) {
+        identifier += source[index];
+        index += 1;
+        column += 1;
+      }
+      push(keywordToken(identifier), identifier, start);
+      continue;
+    }
+
+    throw lexError(
+      `Unexpected char '${character}'`,
+      start,
+      "LEX_UNEXPECTED_CHARACTER",
+    );
   }
-  tokens.push({ type: T.EOF, value: null, pos: { line, col } });
+
+  if (tokens.length >= (limits.maxTokens ?? DEFAULT_LIMITS.maxTokens)) {
+    throw lexError(
+      `Token count exceeds the ${limits.maxTokens} token limit`,
+      position(),
+      "LEX_TOKEN_LIMIT",
+    );
+  }
+  const endPosition = position();
+  tokens.push({
+    type: TOKEN.EOF,
+    value: null,
+    position: endPosition,
+    pos: { line: endPosition.line, col: endPosition.column },
+  });
   return tokens;
 }

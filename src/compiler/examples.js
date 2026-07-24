@@ -1,6 +1,6 @@
-// ── EXAMPLE PROGRAMS ──
-export const EXAMPLES = {
+export const EXAMPLES = Object.freeze({
   "Hello World": `print("Hello, World!");`,
+
   Arrays: `// Array fundamentals: literals, indexing, mutation, push/pop
 let a = [10, 20, 30];
 print("a = ", a);
@@ -19,14 +19,15 @@ print("push(a, 40) → length ", n, ": ", a);
 let last = pop(a);
 print("pop(a) → ", last, ": ", a);
 
-// Reference semantics: b and a are the SAME array
+// Reference semantics: b and a are the same array.
 let b = a;
 push(b, 777);
 print("push(b, 777) → a is ", a);
 
-// Strings index too
+// Strings can be indexed too.
 let s = "FORGE";
 print("s[0] = ", s[0], "  s[4] = ", s[4]);`,
+
   "Bubble Sort": `let a = [64, 25, 12, 90, 11, 42, 7, 38];
 print("unsorted: ", a);
 
@@ -45,6 +46,7 @@ while (i < n - 1) {
   i += 1;
 }
 print("sorted:   ", a);`,
+
   Sieve: `// Sieve of Eratosthenes — all primes up to 100
 let limit = 100;
 let sieve = [];
@@ -59,31 +61,32 @@ sieve[1] = false;
 let p = 2;
 while (p * p <= limit) {
   if (sieve[p]) {
-    let m = p * p;
-    while (m <= limit) {
-      sieve[m] = false;
-      m += p;
+    let multiple = p * p;
+    while (multiple <= limit) {
+      sieve[multiple] = false;
+      multiple += p;
     }
   }
   p += 1;
 }
 
 let primes = [];
-let n = 2;
-while (n <= limit) {
-  if (sieve[n]) { push(primes, n); }
-  n += 1;
+let candidate = 2;
+while (candidate <= limit) {
+  if (sieve[candidate]) { push(primes, candidate); }
+  candidate += 1;
 }
 print(len(primes), " primes up to ", limit, ":");
 print(primes);`,
-  "Binary Search": `fn binary_search(arr, target) {
-  let lo = 0;
-  let hi = len(arr) - 1;
-  while (lo <= hi) {
-    let mid = floor((lo + hi) / 2);
-    if (arr[mid] == target) { return mid; }
-    if (arr[mid] < target) { lo = mid + 1; }
-    else { hi = mid - 1; }
+
+  "Binary Search": `fn binary_search(array, target) {
+  let low = 0;
+  let high = len(array) - 1;
+  while (low <= high) {
+    let middle = floor((low + high) / 2);
+    if (array[middle] == target) { return middle; }
+    if (array[middle] < target) { low = middle + 1; }
+    else { high = middle - 1; }
   }
   return -1;
 }
@@ -94,16 +97,18 @@ print("find 23 → index ", binary_search(sorted, 23));
 print("find 2  → index ", binary_search(sorted, 2));
 print("find 91 → index ", binary_search(sorted, 91));
 print("find 40 → index ", binary_search(sorted, 40));`,
+
   Fibonacci: `let a = 0;
 let b = 1;
 let i = 0;
 while (i < 15) {
   print("fib(", i, ") = ", a);
-  let temp = b;
+  let next = b;
   b = a + b;
-  a = temp;
+  a = next;
   i += 1;
 }`,
+
   FizzBuzz: `let i = 1;
 while (i <= 30) {
   if (i % 15 == 0) { print("FizzBuzz"); }
@@ -112,32 +117,34 @@ while (i <= 30) {
   else { print(i); }
   i += 1;
 }`,
+
   Primes: `fn is_prime(n) {
   if (n < 2) { return false; }
-  let d = 2;
-  while (d * d <= n) {
-    if (n % d == 0) { return false; }
-    d += 1;
+  let divisor = 2;
+  while (divisor * divisor <= n) {
+    if (n % divisor == 0) { return false; }
+    divisor += 1;
   }
   return true;
 }
 
-let n = 2;
+let candidate = 2;
 let count = 0;
-while (n <= 50) {
-  if (is_prime(n)) {
-    print(n);
+while (candidate <= 50) {
+  if (is_prime(candidate)) {
+    print(candidate);
     count += 1;
   }
-  n += 1;
+  candidate += 1;
 }
 print(count, " primes found");`,
-  "String Reverse": `fn reverse(s) {
+
+  "String Reverse": `fn reverse(value) {
   let result = "";
-  let i = len(s) - 1;
-  while (i >= 0) {
-    result = result + s[i];
-    i -= 1;
+  let index = len(value) - 1;
+  while (index >= 0) {
+    result = result + value[index];
+    index -= 1;
   }
   return result;
 }
@@ -145,15 +152,14 @@ print(count, " primes found");`,
 print(reverse("Hello, World!"));
 print(reverse("FORGE"));
 print(reverse("racecar"));`,
-  Palindrome: `fn is_palindrome(s) {
-  let lo = 0;
-  let hi = len(s) - 1;
-  while (lo < hi) {
-    if (s[lo] != s[hi]) {
-      return false;
-    }
-    lo += 1;
-    hi -= 1;
+
+  Palindrome: `fn is_palindrome(value) {
+  let low = 0;
+  let high = len(value) - 1;
+  while (low < high) {
+    if (value[low] != value[high]) { return false; }
+    low += 1;
+    high -= 1;
   }
   return true;
 }
@@ -164,11 +170,12 @@ print("hello: ", is_palindrome("hello"));
 print("civic: ", is_palindrome("civic"));
 print("forge: ", is_palindrome("forge"));
 print("a: ", is_palindrome("a"));`,
+
   "GCD + LCM": `fn gcd(a, b) {
   while (b != 0) {
-    let temp = b;
+    let next = b;
     b = a % b;
-    a = temp;
+    a = next;
   }
   return a;
 }
@@ -181,18 +188,20 @@ print("gcd(48, 18) = ", gcd(48, 18));
 print("gcd(100, 75) = ", gcd(100, 75));
 print("lcm(12, 8) = ", lcm(12, 8));
 print("lcm(7, 5) = ", lcm(7, 5));`,
-  "Tower of Hanoi": `fn hanoi(n, from, to, aux) {
+
+  "Tower of Hanoi": `fn hanoi(n, from, to, auxiliary) {
   if (n == 1) {
     print("Move disk 1: ", from, " → ", to);
     return 0;
   }
-  hanoi(n - 1, from, aux, to);
+  hanoi(n - 1, from, auxiliary, to);
   print("Move disk ", n, ": ", from, " → ", to);
-  hanoi(n - 1, aux, to, from);
+  hanoi(n - 1, auxiliary, to, from);
   return 0;
 }
 
 hanoi(4, "A", "C", "B");`,
+
   Collatz: `fn collatz(n) {
   let steps = 0;
   while (n != 1) {
@@ -208,27 +217,32 @@ while (n <= 20) {
   print("collatz(", n, ") = ", collatz(n), " steps");
   n += 1;
 }`,
+
   "Type Safety": `print("type_of(42) = ", type_of(42));
 print("type_of(\\"hi\\") = ", type_of("hi"));
 print("type_of(true) = ", type_of(true));
-print("type_of([1,2]) = ", type_of([1, 2]));
+print("type_of([1, 2]) = ", type_of([1, 2]));
 print();
-let x = "score: " + 42;
-print(x);
+
+let score = "score: " + 42;
+print(score);
 print("1 == 1: ", 1 == 1);
 print("1 == \\"1\\": ", 1 == "1");
 print("true == 1: ", true == 1);
 print();
-// Arrays compare by REFERENCE
+
+// Arrays compare by reference.
 let a = [1, 2];
 let b = [1, 2];
 let c = a;
 print("[1,2] == [1,2]: ", a == b);
-print("a == c (same ref): ", a == c);`,
+print("a == c (same reference): ", a == c);`,
+
   Escapes: `print("line1\\nline2");
 print("tab:\\there");
 print("quote: \\"hi\\"");`,
-  Closures: `fn make_counter() {
+
+  "Nested Functions": `fn make_counter() {
   fn count_up(n) {
     return n + 1;
   }
@@ -244,4 +258,28 @@ print("quote: \\"hi\\"");`,
 }
 
 print("bounce(0, 10) = ", make_counter());`,
-};
+
+  "Lexical Scope": `let value = 10;
+
+fn read_global() {
+  return value;
+}
+
+fn caller() {
+  let value = 99;
+  return read_global();
+}
+
+fn captured_counter(start) {
+  let current = start;
+  fn increment() {
+    current += 1;
+    return current;
+  }
+  increment();
+  return increment();
+}
+
+print("global from caller = ", caller());
+print("captured counter = ", captured_counter(40));`,
+});

@@ -3,6 +3,15 @@
   "version": "14.0.0",
   "private": true,
   "description": "A browser-based educational compiler and deterministic stack virtual machine for the FORGE language.",
+  "license": "MIT",
+  "homepage": "https://0thernes.github.io/forge-compiler/",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/0thernes/forge-compiler.git"
+  },
+  "bugs": {
+    "url": "https://github.com/0thernes/forge-compiler/issues"
+  },
   "type": "module",
   "scripts": {
     "dev": "vite",

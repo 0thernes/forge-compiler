@@ -43,7 +43,11 @@ describe("parser", () => {
   it("desugars compound assignment into BinOp", () => {
     const p = ast(`x += 2;`).body[0];
     expect(p.type).toBe("Assignment");
-    expect(p.value).toMatchObject({ type: "BinOp", op: "+", left: { name: "x" } });
+    expect(p.value).toMatchObject({
+      type: "BinOp",
+      op: "+",
+      left: { name: "x" },
+    });
   });
 
   it("keeps op on IndexAssignment for single-evaluation codegen", () => {

@@ -5,5 +5,5 @@ import ForgeCompiler from "./App.jsx";
 createRoot(document.getElementById("root")).render(
   <React.StrictMode>
     <ForgeCompiler />
-  </React.StrictMode>
+  </React.StrictMode>,
 );

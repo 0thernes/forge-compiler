@@ -1,32 +1,69 @@
-export function escapeForDisplay(str) {
-  return str.replace(/\\/g, '\\\\').replace(/\0/g, '\\0').replace(/\n/g, '\\n').replace(/\t/g, '\\t').replace(/\r/g, '\\r');
+import { DEFAULT_LIMITS } from "./constants.js";
+
+export function escapeForDisplay(value) {
+  return value
+    .replaceAll("\\", "\\\\")
+    .replaceAll("\0", "\\0")
+    .replaceAll("\n", "\\n")
+    .replaceAll("\t", "\\t")
+    .replaceAll("\r", "\\r")
+    .replaceAll('"', '\\"');
 }
 
-export function typeName(val) {
-  if (typeof val === 'number') return 'number';
-  if (typeof val === 'string') return 'string';
-  if (Array.isArray(val)) return 'array';
-  return typeof val;
+export function typeName(value) {
+  if (typeof value === "number") return "number";
+  if (typeof value === "string") return "string";
+  if (Array.isArray(value)) return "array";
+  return typeof value;
 }
 
-// [FIX v13 #5] Cycle-safe value formatter — self-referencing arrays print "[...]"
-// instead of crashing the host with infinite recursion.
-export function formatValue(val, seen) {
-  if (typeof val === 'number') return String(val);
-  if (typeof val === 'string') return `"${escapeForDisplay(val)}"`;
-  if (Array.isArray(val)) {
-    if (!seen) seen = new Set();
-    if (seen.has(val)) return "[...]";
-    seen.add(val);
-    const inner = val.map(v => formatValue(v, seen)).join(", ");
-    seen.delete(val);
-    return `[${inner}]`;
+function truncate(value, limit) {
+  if (value.length <= limit) return value;
+  if (limit <= 1) return "…".slice(0, limit);
+  return `${value.slice(0, limit - 1)}…`;
+}
+
+export function formatValue(value, options = {}) {
+  const maxDepth = options.maxDepth ?? DEFAULT_LIMITS.maxFormatDepth;
+  const maxItems = options.maxItems ?? DEFAULT_LIMITS.maxFormatItems;
+  const maxCharacters =
+    options.maxCharacters ?? DEFAULT_LIMITS.maxFormatCharacters;
+  const ancestors = new Set();
+  let remainingItems = maxItems;
+
+  function visit(current, depth) {
+    if (typeof current === "number") return String(current);
+    if (typeof current === "string") {
+      return `"${escapeForDisplay(truncate(current, maxCharacters))}"`;
+    }
+    if (!Array.isArray(current)) return String(current);
+    if (ancestors.has(current)) return "[...]";
+    if (depth >= maxDepth) return "[…]";
+    if (remainingItems <= 0) return "[…]";
+
+    ancestors.add(current);
+    const parts = [];
+    for (const item of current) {
+      if (remainingItems <= 0) {
+        parts.push("…");
+        break;
+      }
+      remainingItems -= 1;
+      parts.push(visit(item, depth + 1));
+    }
+    ancestors.delete(current);
+    return `[${parts.join(", ")}]`;
   }
-  return String(val);
+
+  return truncate(visit(value, 0), maxCharacters);
 }
 
-// Top-level print: strings render raw (no quotes); everything else via formatValue.
-export function formatForPrint(val) {
-  if (typeof val === 'string') return val;
-  return formatValue(val);
+export function formatForPrint(value, options = {}) {
+  if (typeof value === "string") {
+    return truncate(
+      value,
+      options.maxCharacters ?? DEFAULT_LIMITS.maxFormatCharacters,
+    );
+  }
+  return formatValue(value, options);
 }

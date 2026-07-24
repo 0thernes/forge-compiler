@@ -1,187 +1,426 @@
-import { BINOP_MAP, ENTRY_LABEL, BUILTINS } from "./constants.js";
+import {
+  BINARY_OPCODE,
+  ENTRY_LABEL,
+  INTERNAL_LABEL_PREFIX,
+  getBuiltin,
+  mergeLimits,
+} from "./constants.js";
+import { ForgeError, atPosition } from "./errors.js";
 
-// ── CODE GENERATOR → Stack ASM ──
-export function codegen(ast) {
-  const asm = [];
-  const pendingFns = [];
-  let labelCount = 0;
-  const label = (prefix) => `${prefix}_${labelCount++}`;
-  let fnId = 0;
-  const fnNameScopes = [{}];
-  function pushFnNameScope() { fnNameScopes.push({}); }
-  function popFnNameScope() { fnNameScopes.pop(); }
-  function registerFn(name, nested) {
-    const current = fnNameScopes[fnNameScopes.length - 1];
-    if (current[name]) return current[name];
-    const mangled = nested ? `${name}$$${fnId++}` : name;
-    current[name] = mangled;
-    return mangled;
-  }
-  function resolveFn(name) { for (let i = fnNameScopes.length - 1; i >= 0; i--) { if (fnNameScopes[i][name]) return fnNameScopes[i][name]; } return name; }
-  function snapshotFnScopes() { return fnNameScopes.map(s => ({ ...s })); }
-  function restoreFnScopes(snapshot) { fnNameScopes.length = 0; snapshot.forEach(s => fnNameScopes.push(s)); }
+function codegenError(message, node, code = "CODEGEN_ERROR") {
+  return new ForgeError(atPosition(message, node?.position), {
+    phase: "codegen",
+    position: node?.position ?? null,
+    code,
+  });
+}
 
+export function codegen(ast, limitOverrides = {}) {
+  const limits = mergeLimits(limitOverrides);
+  const instructions = [];
+  const pendingFunctions = [];
+  const queuedFunctions = new WeakSet();
+  const functionLabels = new WeakMap();
+  let generatedLabelId = 0;
+  let functionId = 0;
   let blockDepth = 0;
   const loopStack = [];
+  let functionNameScopes = [new Map()];
 
-  function emit(op, arg) { if (arg !== undefined) asm.push({ op, arg }); else asm.push({ op }); }
+  function emit(opcode, argument) {
+    if (instructions.length >= limits.maxInstructions) {
+      throw new ForgeError(
+        `Generated instruction count exceeds the ${limits.maxInstructions} instruction limit`,
+        { phase: "codegen", code: "CODEGEN_INSTRUCTION_LIMIT" },
+      );
+    }
+    instructions.push(
+      argument === undefined
+        ? { opcode, op: opcode }
+        : { opcode, op: opcode, argument, arg: argument },
+    );
+  }
 
-  function genNode(node) {
-    if (node.type === "Program") {
-      node.body.forEach(n => { if (n.type === "FnDecl") registerFn(n.name, false); });
-      emit("CALL", ENTRY_LABEL); emit("HALT");
-      // [FIX v13 #7] Top-level code runs directly in the VM's base (global)
-      // frame — no ENTER_SCOPE/EXIT_SCOPE pair around the entry. The old pair
-      // popped the entry frame before HALT, so top-level variables never
-      // survived into the final-state report (FINAL STATE was always empty).
-      // Top-level `return` stays safe: EXIT_SCOPE never pops the base frame.
-      emit("LABEL", ENTRY_LABEL);
-      const saved = blockDepth; blockDepth = 0;
-      node.body.forEach(n => { if (n.type !== "FnDecl") genStmt(n); });
-      blockDepth = saved;
-      emit("PUSH", 0); emit("RET");
-      node.body.forEach(n => { if (n.type === "FnDecl") genFn(n); });
-      while (pendingFns.length > 0) genFn(pendingFns.shift());
+  function generatedLabel(prefix) {
+    const label = `${INTERNAL_LABEL_PREFIX}label:${prefix}:${generatedLabelId}`;
+    generatedLabelId += 1;
+    return label;
+  }
+
+  function newFunctionLabel(name) {
+    const label = `${INTERNAL_LABEL_PREFIX}function:${functionId}:${name}`;
+    functionId += 1;
+    return label;
+  }
+
+  function snapshotFunctionScopes() {
+    return functionNameScopes.map((scope) => new Map(scope));
+  }
+
+  function resolveFunction(name) {
+    for (let index = functionNameScopes.length - 1; index >= 0; index -= 1) {
+      const label = functionNameScopes[index].get(name);
+      if (label) return label;
+    }
+    return name;
+  }
+
+  function predeclareFunctions(body) {
+    const scope = functionNameScopes.at(-1);
+    for (const node of body) {
+      if (node.type !== "FnDecl") continue;
+      if (scope.has(node.name)) {
+        throw codegenError(
+          `Function '${node.name}' is already declared in this scope`,
+          { position: node.namePosition },
+          "CODEGEN_DUPLICATE_FUNCTION",
+        );
+      }
+      const label = newFunctionLabel(node.name);
+      scope.set(node.name, label);
+      functionLabels.set(node, label);
     }
   }
 
-  function genFn(node) {
-    const fnLabel = node._mangledName || node.name;
-    const savedBD = blockDepth, savedLS = [...loopStack];
-    loopStack.length = 0; blockDepth = 0;
-    const savedScopes = snapshotFnScopes();
-    if (node._fnScopeSnapshot) restoreFnScopes(node._fnScopeSnapshot);
-    pushFnNameScope();
-    emit("LABEL", fnLabel); emit("ENTER_SCOPE"); emit("CHECK_ARGC", node.params.length);
-    for (let i = node.params.length - 1; i >= 0; i--) emit("STORE_LOCAL", node.params[i]);
-    genBlock(node.body);
-    emit("EXIT_SCOPE"); emit("PUSH", 0); emit("RET");
-    popFnNameScope(); restoreFnScopes(savedScopes);
-    blockDepth = savedBD; loopStack.length = 0; savedLS.forEach(l => loopStack.push(l));
+  function queueFunctions(body) {
+    const scopeSnapshot = snapshotFunctionScopes();
+    for (const node of body) {
+      if (node.type !== "FnDecl" || queuedFunctions.has(node)) {
+        continue;
+      }
+      queuedFunctions.add(node);
+      pendingFunctions.push({
+        node,
+        label: functionLabels.get(node),
+        scopeSnapshot,
+      });
+    }
   }
 
-  function genBlock(node) {
-    node.body.forEach(n => { if (n.type === "FnDecl") registerFn(n.name, true); });
-    node.body.forEach(genStmt);
-  }
-  function genScopedBlock(node) {
-    emit("ENTER_SCOPE"); blockDepth++; pushFnNameScope();
-    genBlock(node);
-    popFnNameScope(); blockDepth--; emit("EXIT_SCOPE");
+  function emitFunctionBindings(body) {
+    for (const node of body) {
+      if (node.type === "FnDecl") {
+        emit("BIND_FUNCTION", functionLabels.get(node));
+      }
+    }
   }
 
-  function genStmt(node) {
+  function generateBlockContents(body) {
+    predeclareFunctions(body);
+    emitFunctionBindings(body);
+    queueFunctions(body);
+    for (const node of body) {
+      if (node.type !== "FnDecl") generateStatement(node);
+    }
+  }
+
+  function generateScopedBlock(node) {
+    emit("ENTER_SCOPE");
+    blockDepth += 1;
+    functionNameScopes.push(new Map());
+    generateBlockContents(node.body);
+    functionNameScopes.pop();
+    blockDepth -= 1;
+    emit("EXIT_SCOPE");
+  }
+
+  function generateStatement(node) {
     switch (node.type) {
-      case "Let": genExpr(node.value); emit("DECL_STORE", node.name); break;
-      case "Assignment": genExpr(node.value); emit("STORE", node.name); break;
-      // [F1 v13] Index assignment. Plain: arr idx val INDEX_SET.
-      // Compound: DUP2 keeps arr+idx on the stack so both are evaluated exactly ONCE —
-      // a[f()] += 1 calls f a single time, matching C lvalue semantics.
-      case "IndexAssignment": {
-        genExpr(node.array);
-        genExpr(node.index);
+      case "Let":
+        generateExpression(node.value);
+        emit("DECLARE", node.name);
+        break;
+      case "Assignment":
+        generateExpression(node.value);
+        emit("STORE", node.name);
+        break;
+      case "IndexAssignment":
+        generateExpression(node.array);
+        generateExpression(node.index);
         if (node.op) {
-          emit("DUP2");
+          emit("DUPLICATE_PAIR");
           emit("INDEX_GET");
-          genExpr(node.value);
-          emit(BINOP_MAP[node.op]);
+          generateExpression(node.value);
+          emit(BINARY_OPCODE.get(node.op));
         } else {
-          genExpr(node.value);
+          generateExpression(node.value);
         }
         emit("INDEX_SET");
         break;
-      }
-      case "Print": node.args.forEach(a => { genExpr(a); emit("PRINT"); }); emit("PRINTLN"); break;
+      case "Print":
+        node.args.forEach((argument) => {
+          generateExpression(argument);
+          emit("PRINT");
+        });
+        emit("PRINT_LINE");
+        break;
       case "If": {
-        const elseL = label("else"), endL = label("endif");
-        genExpr(node.cond); emit("JZ", node.else ? elseL : endL);
-        genScopedBlock(node.then);
-        if (node.else) { emit("JMP", endL); emit("LABEL", elseL); if (node.else.type === "If") genStmt(node.else); else genScopedBlock(node.else); }
-        emit("LABEL", endL); break;
+        const alternateLabel = generatedLabel("else");
+        const endLabel = generatedLabel("endif");
+        generateExpression(node.cond);
+        emit("JUMP_IF_ZERO", node.else ? alternateLabel : endLabel);
+        generateScopedBlock(node.then);
+        if (node.else) {
+          emit("JUMP", endLabel);
+          emit("LABEL", alternateLabel);
+          if (node.else.type === "If") {
+            generateStatement(node.else);
+          } else {
+            generateScopedBlock(node.else);
+          }
+        }
+        emit("LABEL", endLabel);
+        break;
       }
       case "While": {
-        const startL = label("while"), endL = label("endwhile"), loopDepth = blockDepth;
-        loopStack.push({ startLabel: startL, endLabel: endL, depth: loopDepth });
-        emit("LABEL", startL); genExpr(node.cond); emit("JZ", endL);
-        genScopedBlock(node.body); emit("JMP", startL); emit("LABEL", endL);
-        loopStack.pop(); break;
+        const startLabel = generatedLabel("while");
+        const endLabel = generatedLabel("endwhile");
+        const loopDepth = blockDepth;
+        loopStack.push({ startLabel, endLabel, depth: loopDepth });
+        emit("LABEL", startLabel);
+        generateExpression(node.cond);
+        emit("JUMP_IF_ZERO", endLabel);
+        generateScopedBlock(node.body);
+        emit("JUMP", startLabel);
+        emit("LABEL", endLabel);
+        loopStack.pop();
+        break;
       }
-      case "ExprStmt": genExpr(node.expr); emit("POP"); break;
+      case "ExprStmt":
+        generateExpression(node.expr);
+        emit("POP");
+        break;
       case "Return":
-        if (node.value) genExpr(node.value); else emit("PUSH", 0);
-        for (let d = 0; d < blockDepth; d++) emit("EXIT_SCOPE");
-        emit("EXIT_SCOPE"); emit("RET"); break;
+        if (node.value) generateExpression(node.value);
+        else emit("PUSH", 0);
+        for (let depth = 0; depth < blockDepth; depth += 1) {
+          emit("EXIT_SCOPE");
+        }
+        emit("EXIT_SCOPE");
+        emit("RETURN");
+        break;
       case "Break": {
-        if (loopStack.length === 0) throw new Error("'break' outside of a loop");
-        const loop = loopStack[loopStack.length - 1];
-        for (let d = blockDepth; d > loop.depth; d--) emit("EXIT_SCOPE");
-        emit("JMP", loop.endLabel); break;
+        const loop = loopStack.at(-1);
+        if (!loop) {
+          throw codegenError(
+            "'break' outside of a loop",
+            node,
+            "CODEGEN_BREAK_CONTEXT",
+          );
+        }
+        for (let depth = blockDepth; depth > loop.depth; depth -= 1) {
+          emit("EXIT_SCOPE");
+        }
+        emit("JUMP", loop.endLabel);
+        break;
       }
       case "Continue": {
-        if (loopStack.length === 0) throw new Error("'continue' outside of a loop");
-        const loop = loopStack[loopStack.length - 1];
-        for (let d = blockDepth; d > loop.depth; d--) emit("EXIT_SCOPE");
-        emit("JMP", loop.startLabel); break;
+        const loop = loopStack.at(-1);
+        if (!loop) {
+          throw codegenError(
+            "'continue' outside of a loop",
+            node,
+            "CODEGEN_CONTINUE_CONTEXT",
+          );
+        }
+        for (let depth = blockDepth; depth > loop.depth; depth -= 1) {
+          emit("EXIT_SCOPE");
+        }
+        emit("JUMP", loop.startLabel);
+        break;
       }
-      case "Block": genScopedBlock(node); break;
-      case "FnDecl": {
-        const mangled = registerFn(node.name, true);
-        pendingFns.push({ ...node, _mangledName: mangled, _fnScopeSnapshot: snapshotFnScopes() }); break;
-      }
-      default: throw new Error(`Unknown statement type: ${node.type}`);
+      case "Block":
+        generateScopedBlock(node);
+        break;
+      default:
+        throw codegenError(
+          `Unknown statement type: ${node.type}`,
+          node,
+          "CODEGEN_STATEMENT",
+        );
     }
   }
 
-  function genExpr(node) {
+  function generateExpression(node) {
     switch (node.type) {
-      case "Number": emit("PUSH", node.value); break;
-      case "String": emit("PUSH_STR", node.value); break;
-      case "Boolean": emit("PUSH", node.value ? 1 : 0); break;
-      case "Identifier": emit("LOAD", node.name); break;
-      // [F1 v13] Array literal — elements left-to-right, then bundled
+      case "Number":
+        emit("PUSH", node.value);
+        break;
+      case "String":
+        emit("PUSH_STRING", node.value);
+        break;
+      case "Boolean":
+        emit("PUSH", node.value ? 1 : 0);
+        break;
+      case "Identifier":
+        emit("LOAD", node.name);
+        break;
       case "ArrayLiteral":
-        node.elements.forEach(e => genExpr(e));
+        node.elements.forEach(generateExpression);
         emit("MAKE_ARRAY", node.elements.length);
         break;
-      // [F1 v13] Index read — works on arrays and strings
       case "Index":
-        genExpr(node.array);
-        genExpr(node.index);
+        generateExpression(node.array);
+        generateExpression(node.index);
         emit("INDEX_GET");
         break;
       case "BinOp":
         if (node.op === "&&") {
-          const fL = label("and_f"), eL = label("and_e");
-          genExpr(node.left); emit("JZ", fL); genExpr(node.right); emit("JZ", fL);
-          emit("PUSH", 1); emit("JMP", eL); emit("LABEL", fL); emit("PUSH", 0); emit("LABEL", eL);
+          const falseLabel = generatedLabel("and_false");
+          const endLabel = generatedLabel("and_end");
+          generateExpression(node.left);
+          emit("JUMP_IF_ZERO", falseLabel);
+          generateExpression(node.right);
+          emit("JUMP_IF_ZERO", falseLabel);
+          emit("PUSH", 1);
+          emit("JUMP", endLabel);
+          emit("LABEL", falseLabel);
+          emit("PUSH", 0);
+          emit("LABEL", endLabel);
         } else if (node.op === "||") {
-          const tL = label("or_t"), eL = label("or_e");
-          genExpr(node.left); emit("JNZ", tL); genExpr(node.right); emit("JNZ", tL);
-          emit("PUSH", 0); emit("JMP", eL); emit("LABEL", tL); emit("PUSH", 1); emit("LABEL", eL);
-        } else { genExpr(node.left); genExpr(node.right); emit(BINOP_MAP[node.op] || node.op); }
+          const trueLabel = generatedLabel("or_true");
+          const endLabel = generatedLabel("or_end");
+          generateExpression(node.left);
+          emit("JUMP_IF_NONZERO", trueLabel);
+          generateExpression(node.right);
+          emit("JUMP_IF_NONZERO", trueLabel);
+          emit("PUSH", 0);
+          emit("JUMP", endLabel);
+          emit("LABEL", trueLabel);
+          emit("PUSH", 1);
+          emit("LABEL", endLabel);
+        } else {
+          generateExpression(node.left);
+          generateExpression(node.right);
+          emit(BINARY_OPCODE.get(node.op));
+        }
         break;
       case "UnaryOp":
-        genExpr(node.expr);
-        if (node.op === "-") emit("NEG");
-        if (node.op === "!") emit("NOT");
+        generateExpression(node.expr);
+        emit(node.op === "-" ? "NEGATE" : "NOT");
         break;
       case "Call": {
-        const bi = BUILTINS[node.name];
-        if (bi) {
-          if (node.args.length !== bi.argc) throw new Error(`Built-in '${node.name}' expects ${bi.argc} argument(s), got ${node.args.length}`);
-          node.args.forEach(a => genExpr(a));
-          emit(bi.op);
+        const builtin = getBuiltin(node.name);
+        node.args.forEach(generateExpression);
+        if (builtin) {
+          emit(builtin.opcode);
         } else {
-          node.args.forEach(a => genExpr(a));
-          emit("ARGC", node.args.length);
-          emit("CALL", resolveFn(node.name));
+          emit("ARGUMENT_COUNT", node.args.length);
+          emit("CALL", resolveFunction(node.name));
         }
         break;
       }
-      default: throw new Error(`Unknown expression type: ${node.type}`);
+      default:
+        throw codegenError(
+          `Unknown expression type: ${node.type}`,
+          node,
+          "CODEGEN_EXPRESSION",
+        );
     }
   }
 
-  genNode(ast);
-  return asm;
+  function generateFunction({ node, label, scopeSnapshot }) {
+    const savedScopes = functionNameScopes;
+    const savedBlockDepth = blockDepth;
+    const savedLoops = [...loopStack];
+    functionNameScopes = scopeSnapshot.map((scope) => new Map(scope));
+    functionNameScopes.push(new Map());
+    blockDepth = 0;
+    loopStack.length = 0;
+
+    emit("LABEL", label);
+    emit("ENTER_SCOPE");
+    emit("CHECK_ARGUMENT_COUNT", node.params.length);
+    for (let index = node.params.length - 1; index >= 0; index -= 1) {
+      emit("STORE_LOCAL", node.params[index]);
+    }
+    generateBlockContents(node.body.body);
+    emit("EXIT_SCOPE");
+    emit("PUSH", 0);
+    emit("RETURN");
+
+    functionNameScopes = savedScopes;
+    blockDepth = savedBlockDepth;
+    loopStack.length = 0;
+    loopStack.push(...savedLoops);
+  }
+
+  emit("LABEL", ENTRY_LABEL);
+  generateBlockContents(ast.body);
+  emit("HALT");
+  while (pendingFunctions.length > 0) {
+    generateFunction(pendingFunctions.shift());
+  }
+  return instructions;
+}
+
+export function link(instructions) {
+  const labels = new Map();
+  const code = [];
+
+  for (const instruction of instructions) {
+    const opcode = instruction.opcode ?? instruction.op;
+    const argument = instruction.argument ?? instruction.arg;
+    if (opcode === "LABEL") {
+      if (labels.has(argument)) {
+        throw new ForgeError(`Duplicate label: ${argument}`, {
+          phase: "link",
+          code: "LINK_DUPLICATE_LABEL",
+        });
+      }
+      labels.set(argument, code.length);
+    } else {
+      code.push(
+        argument === undefined
+          ? { ...instruction, opcode, op: opcode }
+          : {
+              ...instruction,
+              opcode,
+              op: opcode,
+              argument,
+              arg: argument,
+            },
+      );
+    }
+  }
+
+  return code.map((instruction) => {
+    if (
+      instruction.opcode !== "JUMP" &&
+      instruction.opcode !== "JUMP_IF_ZERO" &&
+      instruction.opcode !== "JUMP_IF_NONZERO" &&
+      instruction.opcode !== "CALL"
+    ) {
+      return instruction;
+    }
+    const target = labels.get(instruction.argument);
+    if (target === undefined) {
+      const message =
+        instruction.opcode === "CALL"
+          ? `Undefined function: ${instruction.argument}`
+          : `Internal link error: unresolved label '${instruction.argument}'`;
+      throw new ForgeError(message, {
+        phase: "link",
+        code:
+          instruction.opcode === "CALL"
+            ? "LINK_UNDEFINED_FUNCTION"
+            : "LINK_UNRESOLVED_LABEL",
+      });
+    }
+    return { ...instruction, target };
+  });
+}
+
+export function computeInstructionAddresses(instructions) {
+  const addresses = [];
+  let programCounter = 0;
+  for (const instruction of instructions) {
+    if (instruction.opcode === "LABEL") {
+      addresses.push(null);
+    } else {
+      addresses.push(programCounter);
+      programCounter += 1;
+    }
+  }
+  return addresses;
 }

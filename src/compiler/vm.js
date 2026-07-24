@@ -1,194 +1,809 @@
-import { link } from "./linker.js";
-import { typeName, formatForPrint } from "./format.js";
+import { DEFAULT_LIMITS, mergeLimits } from "./constants.js";
+import { link } from "./codegen.js";
+import { ForgeError } from "./errors.js";
+import { formatForPrint, typeName } from "./format.js";
 
-// ── STACK VM ──
-export const TRACE_LIMIT = 500;
-// [FIX v13 #6] 10k → 1M step budget. Calibration: one source-level loop
-// iteration ≈ 15 VM steps, so 1M steps ≈ 65k iterations — real workloads.
-// Deterministic (unlike wall-clock limits), ~0.8µs/step measured. Trace stays
-// capped at 500 and output at 5000 lines so the UI never chokes.
-export const MAX_STEPS = 1000000;
-export const OUTPUT_LIMIT = 5000;
-
-export function execute(asm, maxSteps = MAX_STEPS) {
-  const code = link(asm);
-
-  const stack = [], callStack = [], scopeStack = [{ vars: {} }], output = [];
-  let pc = 0, steps = 0, printLine = "", lastArgc = 0, outputTruncated = false;
-  const trace = []; let traceOverflow = false;
-
-  const currentScope = () => scopeStack[scopeStack.length - 1];
-  const resolveVar = (name) => { for (let i = scopeStack.length - 1; i >= 0; i--) { if (name in scopeStack[i].vars) return scopeStack[i]; } return null; };
-  const safePop = (ctx) => { if (stack.length === 0) throw new Error(`Stack underflow during ${ctx} at PC ${pc}`); return stack.pop(); };
-  const requireNum = (v, op) => { if (typeof v !== 'number') throw new Error(`Type error: '${op}' requires number, got ${typeName(v)}`); };
-  const requireNums = (a, b, op) => { if (typeof a !== 'number' || typeof b !== 'number') throw new Error(`Type error: '${op}' requires numbers, got ${typeName(a)} and ${typeName(b)}`); };
-  // [FIX v13 #3] Strict integer indices — 0.9 is not a valid index anywhere.
-  const requireInt = (v, ctx) => {
-    if (typeof v !== 'number') throw new Error(`Type error: ${ctx} must be a number, got ${typeName(v)}`);
-    if (!Number.isInteger(v)) throw new Error(`Type error: ${ctx} must be an integer, got ${v}`);
+function createScope(parent = null) {
+  return {
+    parent,
+    variables: new Map(),
+    functions: new Map(),
   };
+}
 
-  while (pc < code.length && steps < maxSteps) {
-    const inst = code[pc];
-    const doTrace = trace.length < TRACE_LIMIT;
-    const snap = doTrace ? { pc, op: inst.op, arg: inst.arg, stackBefore: [...stack] } : null;
-    if (!doTrace && !traceOverflow) traceOverflow = true;
-    steps++;
+function countNewlines(value) {
+  let count = 0;
+  for (const character of value) {
+    if (character === "\n") count += 1;
+  }
+  return count;
+}
 
-    switch (inst.op) {
-      case "PUSH": stack.push(inst.arg); pc++; break;
-      case "PUSH_STR": stack.push(inst.arg); pc++; break;
-      case "POP": safePop("POP"); pc++; break;
-      case "STORE_LOCAL": currentScope().vars[inst.arg] = safePop("STORE_LOCAL"); pc++; break;
-      case "DECL_STORE": {
-        const val = safePop("DECL_STORE");
-        const scope = currentScope();
-        if (inst.arg in scope.vars) throw new Error(`Variable '${inst.arg}' already declared in this scope`);
-        scope.vars[inst.arg] = val; pc++; break;
+export function execute(assembly, options = {}) {
+  const normalizedOptions =
+    typeof options === "number" ? { maxSteps: options } : options;
+  const limits = mergeLimits(normalizedOptions.limits ?? normalizedOptions);
+  const code = link(assembly);
+  const stack = [];
+  const callStack = [];
+  const rootScope = createScope();
+  let currentScope = rootScope;
+  const output = [];
+  const trace = [];
+  let programCounter = 0;
+  let steps = 0;
+  let pendingArgumentCount = 0;
+  let printLine = "";
+  let outputCharacters = 0;
+  let outputLines = 0;
+  let outputTruncated = false;
+  let outputTruncationReason = null;
+  let pendingOutputTruncation = null;
+  let traceOverflow = false;
+  let traceCharacters = 0;
+  let status = "running";
+
+  function runtimeError(message, codeName = "VM_RUNTIME") {
+    return new ForgeError(`${message} at PC ${programCounter}`, {
+      phase: "execute",
+      code: codeName,
+    });
+  }
+
+  function resolveVariable(name) {
+    for (let scope = currentScope; scope; scope = scope.parent) {
+      if (scope.variables.has(name)) return scope;
+    }
+    return null;
+  }
+
+  function resolveFunction(label) {
+    for (let scope = currentScope; scope; scope = scope.parent) {
+      const binding = scope.functions.get(label);
+      if (binding) return binding;
+    }
+    return null;
+  }
+
+  function push(value, context = "PUSH") {
+    if (stack.length >= limits.maxStackDepth) {
+      throw runtimeError(
+        `Operand stack exceeds the ${limits.maxStackDepth} value limit during ${context}`,
+        "VM_STACK_LIMIT",
+      );
+    }
+    stack.push(value);
+  }
+
+  function pop(context) {
+    if (stack.length === 0) {
+      throw runtimeError(
+        `Stack underflow during ${context}`,
+        "VM_STACK_UNDERFLOW",
+      );
+    }
+    return stack.pop();
+  }
+
+  function requireNumber(value, operation) {
+    if (typeof value !== "number" || !Number.isFinite(value)) {
+      throw runtimeError(
+        `Type error: '${operation}' requires number, got ${typeName(value)}`,
+        "VM_TYPE_NUMBER",
+      );
+    }
+  }
+
+  function requireNumbers(left, right, operation) {
+    if (
+      typeof left !== "number" ||
+      !Number.isFinite(left) ||
+      typeof right !== "number" ||
+      !Number.isFinite(right)
+    ) {
+      throw runtimeError(
+        `Type error: '${operation}' requires numbers, got ${typeName(left)} and ${typeName(right)}`,
+        "VM_TYPE_NUMBER",
+      );
+    }
+  }
+
+  function pushNumberResult(value, operation) {
+    if (!Number.isFinite(value)) {
+      throw runtimeError(
+        `Numeric overflow during '${operation}'`,
+        "VM_NUMBER_RANGE",
+      );
+    }
+    push(value, operation);
+  }
+
+  function requireInteger(value, context) {
+    requireNumber(value, context);
+    if (!Number.isInteger(value)) {
+      throw runtimeError(
+        `Type error: ${context} must be an integer, got ${value}`,
+        "VM_TYPE_INTEGER",
+      );
+    }
+  }
+
+  function captureTraceString(value) {
+    const remainingTotal = Math.max(
+      0,
+      limits.maxTraceCharacters - traceCharacters,
+    );
+    const allowed = Math.min(limits.maxTraceValueCharacters, remainingTotal);
+    if (value.length <= allowed) {
+      traceCharacters += value.length;
+      return value;
+    }
+
+    traceOverflow = true;
+    if (allowed === 0) return "…";
+    if (allowed === 1) {
+      traceCharacters += 1;
+      return "…";
+    }
+    const captured = `${value.slice(0, allowed - 1)}…`;
+    traceCharacters += captured.length;
+    return captured;
+  }
+
+  function captureStack() {
+    const omitted = Math.max(0, stack.length - limits.maxTraceStackItems);
+    const seen = new WeakMap();
+    let remainingItems = limits.maxFormatItems;
+
+    function snapshot(value, depth = 0) {
+      if (typeof value === "string") return captureTraceString(value);
+      if (!Array.isArray(value)) return value;
+      if (seen.has(value)) return seen.get(value);
+      if (depth >= limits.maxFormatDepth || remainingItems <= 0) return ["…"];
+      const clone = [];
+      seen.set(value, clone);
+      for (const item of value) {
+        if (remainingItems <= 0) {
+          clone.push("…");
+          break;
+        }
+        remainingItems -= 1;
+        clone.push(snapshot(item, depth + 1));
+      }
+      return clone;
+    }
+
+    const captured = stack.slice(omitted).map((value) => snapshot(value));
+    if (omitted > 0) captured.unshift(`… ${omitted} earlier value(s)`);
+    return captured;
+  }
+
+  function addTruncationMarker(reason) {
+    if (!outputTruncated) {
+      let marker;
+      if (reason === "characters") {
+        marker = `[OUTPUT TRUNCATED AT ${limits.maxOutputCharacters} CHARACTERS]`;
+      } else if (reason === "lines_and_characters") {
+        marker = `[OUTPUT TRUNCATED AT ${limits.maxOutputLines} LINES / ${limits.maxOutputCharacters} CHARACTERS]`;
+      } else {
+        marker = `[OUTPUT TRUNCATED AT ${limits.maxOutputLines} LINES]`;
+      }
+      output.push(marker);
+      outputTruncated = true;
+      outputTruncationReason = reason;
+    }
+  }
+
+  function finishPrintLine() {
+    if (outputTruncated) {
+      printLine = "";
+      return;
+    }
+
+    const lineCount = countNewlines(printLine) + 1;
+    const separatorCharacters = output.length > 0 ? 1 : 0;
+    const nextCharacterCount =
+      outputCharacters + printLine.length + separatorCharacters;
+    const exceedsLines = outputLines + lineCount > limits.maxOutputLines;
+    const exceedsCharacters =
+      pendingOutputTruncation === "characters" ||
+      nextCharacterCount > limits.maxOutputCharacters;
+    if (exceedsLines || exceedsCharacters) {
+      const remainingLines = Math.max(0, limits.maxOutputLines - outputLines);
+      const remainingCharacters = Math.max(
+        0,
+        limits.maxOutputCharacters - outputCharacters - separatorCharacters,
+      );
+      if (remainingLines > 0 && remainingCharacters > 0) {
+        const pieces = printLine.split("\n").slice(0, remainingLines);
+        const partial = pieces.join("\n").slice(0, remainingCharacters);
+        if (partial.length > 0) output.push(partial);
+      }
+      addTruncationMarker(
+        exceedsLines && exceedsCharacters
+          ? "lines_and_characters"
+          : exceedsCharacters
+            ? "characters"
+            : "lines",
+      );
+      pendingOutputTruncation = null;
+      printLine = "";
+      return;
+    }
+
+    output.push(printLine);
+    outputLines += lineCount;
+    outputCharacters = nextCharacterCount;
+    pendingOutputTruncation = null;
+    printLine = "";
+  }
+
+  while (programCounter < code.length && status === "running") {
+    if (steps >= limits.maxSteps) {
+      status = "step_limit";
+      break;
+    }
+
+    const instruction = code[programCounter];
+    const shouldCaptureTrace = trace.length < limits.maxTraceEntries;
+    const capturedArgument =
+      shouldCaptureTrace && typeof instruction.argument === "string"
+        ? captureTraceString(instruction.argument)
+        : instruction.argument;
+    const traceEntry = shouldCaptureTrace
+      ? {
+          programCounter,
+          pc: programCounter,
+          opcode: instruction.opcode,
+          op: instruction.opcode,
+          argument: capturedArgument,
+          arg: capturedArgument,
+          stackBefore: captureStack(),
+        }
+      : null;
+    if (!traceEntry) traceOverflow = true;
+    steps += 1;
+
+    switch (instruction.opcode) {
+      case "PUSH":
+      case "PUSH_STRING":
+        push(instruction.argument, instruction.opcode);
+        programCounter += 1;
+        break;
+      case "POP":
+        pop("POP");
+        programCounter += 1;
+        break;
+      case "STORE_LOCAL":
+        currentScope.variables.set(instruction.argument, pop("STORE_LOCAL"));
+        programCounter += 1;
+        break;
+      case "DECLARE": {
+        const value = pop("DECLARE");
+        if (currentScope.variables.has(instruction.argument)) {
+          throw runtimeError(
+            `Variable '${instruction.argument}' is already declared in this scope`,
+            "VM_DUPLICATE_VARIABLE",
+          );
+        }
+        currentScope.variables.set(instruction.argument, value);
+        programCounter += 1;
+        break;
       }
       case "STORE": {
-        const val = safePop("STORE"), scope = resolveVar(inst.arg);
-        if (!scope) throw new Error(`Assignment to undeclared variable: ${inst.arg}. Use 'let ${inst.arg} = ...' first`);
-        scope.vars[inst.arg] = val; pc++; break;
-      }
-      case "LOAD": { const scope = resolveVar(inst.arg); if (!scope) throw new Error(`Undefined variable: ${inst.arg}`); stack.push(scope.vars[inst.arg]); pc++; break; }
-      case "ENTER_SCOPE": scopeStack.push({ vars: {} }); pc++; break;
-      case "EXIT_SCOPE": { if (scopeStack.length > 1) scopeStack.pop(); pc++; break; }
-      case "ARGC": lastArgc = inst.arg; pc++; break;
-      case "CHECK_ARGC": { if (lastArgc !== inst.arg) throw new Error(`Expected ${inst.arg} argument(s) but got ${lastArgc}`); pc++; break; }
-
-      // ── Arrays ──
-      // [F1 v13] MAKE_ARRAY n: splice preserves push order — [1,2,3] means [1,2,3]
-      case "MAKE_ARRAY": {
-        const n = inst.arg;
-        if (stack.length < n) throw new Error(`Stack underflow during MAKE_ARRAY at PC ${pc}`);
-        stack.push(stack.splice(stack.length - n, n));
-        pc++; break;
-      }
-      // [F1 v13] Indexing reads arrays AND strings (s[i] like every peer language)
-      case "INDEX_GET": {
-        const idx = safePop("INDEX_GET"), target = safePop("INDEX_GET");
-        requireInt(idx, "index");
-        if (Array.isArray(target)) {
-          if (idx < 0 || idx >= target.length) throw new Error(`Index out of bounds: index ${idx}, array length ${target.length}`);
-          stack.push(target[idx]);
-        } else if (typeof target === 'string') {
-          if (idx < 0 || idx >= target.length) throw new Error(`Index out of bounds: index ${idx}, string length ${target.length}`);
-          stack.push(target[idx]);
-        } else {
-          throw new Error(`Type error: cannot index ${typeName(target)}`);
+        const value = pop("STORE");
+        const scope = resolveVariable(instruction.argument);
+        if (!scope) {
+          throw runtimeError(
+            `Assignment to undeclared variable: ${instruction.argument}. Use 'let ${instruction.argument} = ...' first`,
+            "VM_UNDECLARED_ASSIGNMENT",
+          );
         }
-        pc++; break;
+        scope.variables.set(instruction.argument, value);
+        programCounter += 1;
+        break;
       }
-      // [F1 v13] Writes are array-only — FORGE strings are immutable
+      case "LOAD": {
+        const scope = resolveVariable(instruction.argument);
+        if (!scope) {
+          throw runtimeError(
+            `Undefined variable: ${instruction.argument}`,
+            "VM_UNDEFINED_VARIABLE",
+          );
+        }
+        push(scope.variables.get(instruction.argument), "LOAD");
+        programCounter += 1;
+        break;
+      }
+      case "ENTER_SCOPE":
+        currentScope = createScope(currentScope);
+        programCounter += 1;
+        break;
+      case "EXIT_SCOPE":
+        if (!currentScope.parent) {
+          throw runtimeError(
+            "Scope underflow during EXIT_SCOPE",
+            "VM_SCOPE_UNDERFLOW",
+          );
+        }
+        currentScope = currentScope.parent;
+        programCounter += 1;
+        break;
+      case "BIND_FUNCTION":
+        if (currentScope.functions.has(instruction.argument)) {
+          throw runtimeError(
+            `Function binding '${instruction.argument}' already exists`,
+            "VM_DUPLICATE_FUNCTION_BINDING",
+          );
+        }
+        currentScope.functions.set(instruction.argument, {
+          environment: currentScope,
+        });
+        programCounter += 1;
+        break;
+      case "ARGUMENT_COUNT":
+        pendingArgumentCount = instruction.argument;
+        programCounter += 1;
+        break;
+      case "CHECK_ARGUMENT_COUNT": {
+        const frame = callStack.at(-1);
+        if (!frame) {
+          throw runtimeError(
+            "Function entered without a call frame",
+            "VM_CALL_FRAME_MISSING",
+          );
+        }
+        if (frame.argumentCount !== instruction.argument) {
+          throw runtimeError(
+            `Expected ${instruction.argument} argument(s) but got ${frame.argumentCount}`,
+            "VM_ARITY",
+          );
+        }
+        programCounter += 1;
+        break;
+      }
+      case "MAKE_ARRAY": {
+        const length = instruction.argument;
+        if (length > limits.maxArrayLength) {
+          throw runtimeError(
+            `Array length exceeds the ${limits.maxArrayLength} element limit`,
+            "VM_ARRAY_LIMIT",
+          );
+        }
+        if (stack.length < length) {
+          throw runtimeError(
+            "Stack underflow during MAKE_ARRAY",
+            "VM_STACK_UNDERFLOW",
+          );
+        }
+        const values = stack.splice(stack.length - length, length);
+        push(values, "MAKE_ARRAY");
+        programCounter += 1;
+        break;
+      }
+      case "INDEX_GET": {
+        const index = pop("INDEX_GET");
+        const target = pop("INDEX_GET");
+        requireInteger(index, "index");
+        if (Array.isArray(target)) {
+          if (index < 0 || index >= target.length) {
+            throw runtimeError(
+              `Index out of bounds: index ${index}, array length ${target.length}`,
+              "VM_INDEX_BOUNDS",
+            );
+          }
+          push(target[index], "INDEX_GET");
+        } else if (typeof target === "string") {
+          if (index < 0 || index >= target.length) {
+            throw runtimeError(
+              `Index out of bounds: index ${index}, string length ${target.length}`,
+              "VM_INDEX_BOUNDS",
+            );
+          }
+          push(target[index], "INDEX_GET");
+        } else {
+          throw runtimeError(
+            `Type error: cannot index ${typeName(target)}`,
+            "VM_INDEX_TYPE",
+          );
+        }
+        programCounter += 1;
+        break;
+      }
       case "INDEX_SET": {
-        const val = safePop("INDEX_SET"), idx = safePop("INDEX_SET"), target = safePop("INDEX_SET");
-        if (typeof target === 'string') throw new Error(`Type error: strings are immutable — build a new string instead`);
-        if (!Array.isArray(target)) throw new Error(`Type error: cannot index-assign ${typeName(target)}`);
-        requireInt(idx, "index");
-        if (idx < 0 || idx >= target.length) throw new Error(`Index out of bounds: index ${idx}, array length ${target.length} (use push to append)`);
-        target[idx] = val;
-        pc++; break;
+        const value = pop("INDEX_SET");
+        const index = pop("INDEX_SET");
+        const target = pop("INDEX_SET");
+        if (typeof target === "string") {
+          throw runtimeError(
+            "Type error: strings are immutable — build a new string instead",
+            "VM_STRING_IMMUTABLE",
+          );
+        }
+        if (!Array.isArray(target)) {
+          throw runtimeError(
+            `Type error: cannot index-assign ${typeName(target)}`,
+            "VM_INDEX_TYPE",
+          );
+        }
+        requireInteger(index, "index");
+        if (index < 0 || index >= target.length) {
+          throw runtimeError(
+            `Index out of bounds: index ${index}, array length ${target.length} (use push to append)`,
+            "VM_INDEX_BOUNDS",
+          );
+        }
+        target[index] = value;
+        programCounter += 1;
+        break;
       }
-      // [F1 v13] DUP2 duplicates top two stack refs — enables single-eval compound index assignment
-      case "DUP2": {
-        if (stack.length < 2) throw new Error(`Stack underflow during DUP2 at PC ${pc}`);
-        stack.push(stack[stack.length - 2], stack[stack.length - 1]);
-        pc++; break;
-      }
-
-      // Arithmetic with type safety
+      case "DUPLICATE_PAIR":
+        if (stack.length < 2) {
+          throw runtimeError(
+            "Stack underflow during DUPLICATE_PAIR",
+            "VM_STACK_UNDERFLOW",
+          );
+        }
+        push(stack.at(-2), "DUPLICATE_PAIR");
+        push(stack.at(-2), "DUPLICATE_PAIR");
+        programCounter += 1;
+        break;
       case "ADD": {
-        const b = safePop("ADD"), a = safePop("ADD");
-        if (typeof a === 'number' && typeof b === 'number') stack.push(a + b);
-        else if (typeof a === 'string' || typeof b === 'string') stack.push(formatForPrint(a) + formatForPrint(b));
-        else throw new Error(`Type error: '+' requires numbers or strings, got ${typeName(a)} and ${typeName(b)}`);
-        pc++; break;
+        const right = pop("ADD");
+        const left = pop("ADD");
+        if (typeof left === "number" && typeof right === "number") {
+          requireNumbers(left, right, "+");
+          pushNumberResult(left + right, "+");
+        } else if (typeof left === "string" || typeof right === "string") {
+          const value =
+            formatForPrint(left, {
+              maxCharacters: limits.maxStringLength,
+              maxItems: limits.maxFormatItems,
+              maxDepth: limits.maxFormatDepth,
+            }) +
+            formatForPrint(right, {
+              maxCharacters: limits.maxStringLength,
+              maxItems: limits.maxFormatItems,
+              maxDepth: limits.maxFormatDepth,
+            });
+          if (value.length > limits.maxStringLength) {
+            throw runtimeError(
+              `String length exceeds the ${limits.maxStringLength} character limit`,
+              "VM_STRING_LIMIT",
+            );
+          }
+          push(value, "ADD");
+        } else {
+          throw runtimeError(
+            `Type error: '+' requires numbers or strings, got ${typeName(left)} and ${typeName(right)}`,
+            "VM_TYPE_ADD",
+          );
+        }
+        programCounter += 1;
+        break;
       }
-      case "SUB": { const b = safePop("SUB"), a = safePop("SUB"); requireNums(a, b, "-"); stack.push(a - b); pc++; break; }
-      case "MUL": { const b = safePop("MUL"), a = safePop("MUL"); requireNums(a, b, "*"); stack.push(a * b); pc++; break; }
-      case "DIV": { const b = safePop("DIV"), a = safePop("DIV"); requireNums(a, b, "/"); if (b === 0) throw new Error("Division by zero"); stack.push(a / b); pc++; break; }
-      case "MOD": { const b = safePop("MOD"), a = safePop("MOD"); requireNums(a, b, "%"); if (b === 0) throw new Error("Modulo by zero"); stack.push(a % b); pc++; break; }
-      case "NEG": { const v = safePop("NEG"); requireNum(v, "-"); stack.push(-v); pc++; break; }
-      case "NOT": stack.push(safePop("NOT") ? 0 : 1); pc++; break;
-      // EQ/NEQ: strict equality; arrays compare by reference (peer-standard)
-      case "EQ": { const b = safePop("EQ"), a = safePop("EQ"); stack.push(a === b ? 1 : 0); pc++; break; }
-      case "NEQ": { const b = safePop("NEQ"), a = safePop("NEQ"); stack.push(a !== b ? 1 : 0); pc++; break; }
-      case "LT": { const b = safePop("LT"), a = safePop("LT"); requireNums(a, b, "<"); stack.push(a < b ? 1 : 0); pc++; break; }
-      case "GT": { const b = safePop("GT"), a = safePop("GT"); requireNums(a, b, ">"); stack.push(a > b ? 1 : 0); pc++; break; }
-      case "LTE": { const b = safePop("LTE"), a = safePop("LTE"); requireNums(a, b, "<="); stack.push(a <= b ? 1 : 0); pc++; break; }
-      case "GTE": { const b = safePop("GTE"), a = safePop("GTE"); requireNums(a, b, ">="); stack.push(a >= b ? 1 : 0); pc++; break; }
-
-      // Control flow — [FIX v13 #2] pre-linked numeric targets, zero hash lookups
-      case "JMP": pc = inst.target; break;
-      case "JZ": pc = safePop("JZ") ? pc + 1 : inst.target; break;
-      case "JNZ": pc = safePop("JNZ") ? inst.target : pc + 1; break;
-      case "CALL": { callStack.push(pc + 1); pc = inst.target; break; }
-      case "RET": { if (callStack.length === 0) throw new Error(`Return with empty call stack at PC ${pc}`); pc = callStack.pop(); break; }
-      // [FIX v13 #4] PRINT formats arrays properly: [1, 2, "x"] — cycle-safe
-      case "PRINT": printLine += formatForPrint(safePop("PRINT")); pc++; break;
-      case "PRINTLN": {
-        if (output.length < OUTPUT_LIMIT) output.push(printLine);
-        else if (!outputTruncated) { output.push(`[OUTPUT TRUNCATED AT ${OUTPUT_LIMIT} LINES]`); outputTruncated = true; }
-        printLine = ""; pc++; break;
+      case "SUBTRACT":
+      case "SUB": {
+        const right = pop("SUB");
+        const left = pop("SUB");
+        requireNumbers(left, right, "-");
+        pushNumberResult(left - right, "-");
+        programCounter += 1;
+        break;
       }
-      case "HALT": pc = code.length; break;
-
-      // ── Built-ins ──
-      // [F1 v13] len works on strings AND arrays
+      case "MULTIPLY":
+      case "MUL": {
+        const right = pop("MUL");
+        const left = pop("MUL");
+        requireNumbers(left, right, "*");
+        pushNumberResult(left * right, "*");
+        programCounter += 1;
+        break;
+      }
+      case "DIVIDE":
+      case "DIV": {
+        const right = pop("DIV");
+        const left = pop("DIV");
+        requireNumbers(left, right, "/");
+        if (right === 0) {
+          throw runtimeError("Division by zero", "VM_DIVISION_ZERO");
+        }
+        pushNumberResult(left / right, "/");
+        programCounter += 1;
+        break;
+      }
+      case "MOD": {
+        const right = pop("MOD");
+        const left = pop("MOD");
+        requireNumbers(left, right, "%");
+        if (right === 0) {
+          throw runtimeError("Modulo by zero", "VM_MODULO_ZERO");
+        }
+        pushNumberResult(left % right, "%");
+        programCounter += 1;
+        break;
+      }
+      case "NEGATE": {
+        const value = pop("NEGATE");
+        requireNumber(value, "-");
+        pushNumberResult(-value, "-");
+        programCounter += 1;
+        break;
+      }
+      case "NOT":
+        push(pop("NOT") ? 0 : 1, "NOT");
+        programCounter += 1;
+        break;
+      case "EQ": {
+        const right = pop("EQ");
+        const left = pop("EQ");
+        push(left === right ? 1 : 0, "EQ");
+        programCounter += 1;
+        break;
+      }
+      case "NEQ": {
+        const right = pop("NEQ");
+        const left = pop("NEQ");
+        push(left !== right ? 1 : 0, "NEQ");
+        programCounter += 1;
+        break;
+      }
+      case "LT":
+      case "GT":
+      case "LTE":
+      case "GTE": {
+        const right = pop(instruction.opcode);
+        const left = pop(instruction.opcode);
+        requireNumbers(left, right, instruction.opcode);
+        const comparisons = {
+          LT: left < right,
+          GT: left > right,
+          LTE: left <= right,
+          GTE: left >= right,
+        };
+        push(comparisons[instruction.opcode] ? 1 : 0, instruction.opcode);
+        programCounter += 1;
+        break;
+      }
+      case "JUMP":
+        programCounter = instruction.target;
+        break;
+      case "JUMP_IF_ZERO":
+        programCounter = pop("JUMP_IF_ZERO")
+          ? programCounter + 1
+          : instruction.target;
+        break;
+      case "JUMP_IF_NONZERO":
+        programCounter = pop("JUMP_IF_NONZERO")
+          ? instruction.target
+          : programCounter + 1;
+        break;
+      case "CALL": {
+        if (callStack.length >= limits.maxCallDepth) {
+          throw runtimeError(
+            `Call depth exceeds the ${limits.maxCallDepth} frame limit`,
+            "VM_CALL_DEPTH_LIMIT",
+          );
+        }
+        if (stack.length < pendingArgumentCount) {
+          throw runtimeError(
+            "Stack underflow while binding function arguments",
+            "VM_STACK_UNDERFLOW",
+          );
+        }
+        const binding = resolveFunction(instruction.argument);
+        if (!binding) {
+          throw runtimeError(
+            `Function '${instruction.argument}' is not bound in the current lexical environment`,
+            "VM_FUNCTION_BINDING",
+          );
+        }
+        callStack.push({
+          returnProgramCounter: programCounter + 1,
+          callerScope: currentScope,
+          stackBase: stack.length - pendingArgumentCount,
+          argumentCount: pendingArgumentCount,
+          functionLabel: instruction.argument,
+        });
+        pendingArgumentCount = 0;
+        currentScope = binding.environment;
+        programCounter = instruction.target;
+        break;
+      }
+      case "RETURN": {
+        const result = pop("RETURN");
+        const frame = callStack.pop();
+        if (!frame) {
+          throw runtimeError(
+            "Return with empty call stack",
+            "VM_CALL_STACK_UNDERFLOW",
+          );
+        }
+        stack.length = frame.stackBase;
+        push(result, "RETURN");
+        currentScope = frame.callerScope;
+        programCounter = frame.returnProgramCounter;
+        break;
+      }
+      case "PRINT": {
+        const value = formatForPrint(pop("PRINT"), {
+          maxDepth: limits.maxFormatDepth,
+          maxItems: limits.maxFormatItems,
+          maxCharacters: limits.maxStringLength,
+        });
+        if (!outputTruncated && pendingOutputTruncation === null) {
+          const separatorCharacters = output.length > 0 ? 1 : 0;
+          const remainingCharacters = Math.max(
+            0,
+            limits.maxOutputCharacters -
+              outputCharacters -
+              separatorCharacters -
+              printLine.length,
+          );
+          if (value.length > remainingCharacters) {
+            printLine += value.slice(0, remainingCharacters);
+            pendingOutputTruncation = "characters";
+          } else {
+            printLine += value;
+          }
+        } else if (!outputTruncated) {
+          // A previous argument already filled the current output budget.
+          pendingOutputTruncation = "characters";
+        }
+        programCounter += 1;
+        break;
+      }
+      case "PRINT_LINE":
+        finishPrintLine();
+        programCounter += 1;
+        break;
+      case "HALT":
+        status = "halted";
+        programCounter = code.length;
+        break;
       case "BUILTIN_LEN": {
-        const v = safePop("len");
-        if (typeof v === 'string' || Array.isArray(v)) stack.push(v.length);
-        else throw new Error(`Type error: len() requires string or array, got ${typeName(v)}`);
-        pc++; break;
+        const value = pop("len");
+        if (typeof value === "string" || Array.isArray(value)) {
+          push(value.length, "len");
+        } else {
+          throw runtimeError(
+            `Type error: len() requires string or array, got ${typeName(value)}`,
+            "VM_BUILTIN_TYPE",
+          );
+        }
+        programCounter += 1;
+        break;
       }
-      // [FIX v13 #3] char_at demands an integer index — no silent flooring
       case "BUILTIN_CHAR_AT": {
-        const idx = safePop("char_at"), s = safePop("char_at");
-        if (typeof s !== 'string') throw new Error(`Type error: char_at() requires string as first argument, got ${typeName(s)}`);
-        requireInt(idx, "char_at index");
-        if (idx < 0 || idx >= s.length) throw new Error(`Index out of bounds: char_at(${s.length} chars, ${idx})`);
-        stack.push(s[idx]); pc++; break;
+        const index = pop("char_at");
+        const value = pop("char_at");
+        if (typeof value !== "string") {
+          throw runtimeError(
+            `Type error: char_at() requires string as first argument, got ${typeName(value)}`,
+            "VM_BUILTIN_TYPE",
+          );
+        }
+        requireInteger(index, "char_at index");
+        if (index < 0 || index >= value.length) {
+          throw runtimeError(
+            `Index out of bounds: char_at(${value.length} code units, ${index})`,
+            "VM_INDEX_BOUNDS",
+          );
+        }
+        push(value[index], "char_at");
+        programCounter += 1;
+        break;
       }
-      // [FIX v13 #1] substr: strict bounds. Negative start no longer silently reads
-      // from the end (JS substr leak). start ∈ [0, len], count ≥ 0, end clamped.
       case "BUILTIN_SUBSTR": {
-        const count = safePop("substr"), start = safePop("substr"), s = safePop("substr");
-        if (typeof s !== 'string') throw new Error(`Type error: substr() requires string as first argument, got ${typeName(s)}`);
-        requireInt(start, "substr start"); requireInt(count, "substr count");
-        if (start < 0 || start > s.length) throw new Error(`substr start out of range: start ${start}, string length ${s.length}`);
-        if (count < 0) throw new Error(`substr count must be non-negative, got ${count}`);
-        stack.push(s.slice(start, start + count)); pc++; break;
+        const count = pop("substr");
+        const start = pop("substr");
+        const value = pop("substr");
+        if (typeof value !== "string") {
+          throw runtimeError(
+            `Type error: substr() requires string as first argument, got ${typeName(value)}`,
+            "VM_BUILTIN_TYPE",
+          );
+        }
+        requireInteger(start, "substr start");
+        requireInteger(count, "substr count");
+        if (start < 0 || start > value.length) {
+          throw runtimeError(
+            `substr start out of range: start ${start}, string length ${value.length}`,
+            "VM_SUBSTR_BOUNDS",
+          );
+        }
+        if (count < 0) {
+          throw runtimeError(
+            `substr count must be non-negative, got ${count}`,
+            "VM_SUBSTR_BOUNDS",
+          );
+        }
+        push(value.slice(start, start + count), "substr");
+        programCounter += 1;
+        break;
       }
       case "BUILTIN_FLOOR": {
-        const v = safePop("floor"); requireNum(v, "floor");
-        stack.push(Math.floor(v)); pc++; break;
+        const value = pop("floor");
+        requireNumber(value, "floor");
+        push(Math.floor(value), "floor");
+        programCounter += 1;
+        break;
       }
-      case "BUILTIN_TYPE_OF": {
-        const v = safePop("type_of");
-        stack.push(typeName(v)); pc++; break;
-      }
-      // [F1 v13] push(arr, v) appends, returns new length. pop(arr) removes+returns last.
+      case "BUILTIN_TYPE_OF":
+        push(typeName(pop("type_of")), "type_of");
+        programCounter += 1;
+        break;
       case "BUILTIN_PUSH": {
-        const v = safePop("push"), arr = safePop("push");
-        if (!Array.isArray(arr)) throw new Error(`Type error: push() requires array as first argument, got ${typeName(arr)}`);
-        arr.push(v);
-        stack.push(arr.length); pc++; break;
+        const value = pop("push");
+        const array = pop("push");
+        if (!Array.isArray(array)) {
+          throw runtimeError(
+            `Type error: push() requires array as first argument, got ${typeName(array)}`,
+            "VM_BUILTIN_TYPE",
+          );
+        }
+        if (array.length >= limits.maxArrayLength) {
+          throw runtimeError(
+            `Array length exceeds the ${limits.maxArrayLength} element limit`,
+            "VM_ARRAY_LIMIT",
+          );
+        }
+        array.push(value);
+        push(array.length, "push");
+        programCounter += 1;
+        break;
       }
       case "BUILTIN_POP": {
-        const arr = safePop("pop");
-        if (!Array.isArray(arr)) throw new Error(`Type error: pop() requires array, got ${typeName(arr)}`);
-        if (arr.length === 0) throw new Error(`pop from empty array`);
-        stack.push(arr.pop()); pc++; break;
+        const array = pop("pop");
+        if (!Array.isArray(array)) {
+          throw runtimeError(
+            `Type error: pop() requires array, got ${typeName(array)}`,
+            "VM_BUILTIN_TYPE",
+          );
+        }
+        if (array.length === 0) {
+          throw runtimeError("pop from empty array", "VM_POP_EMPTY");
+        }
+        push(array.pop(), "pop");
+        programCounter += 1;
+        break;
       }
-
-      default: throw new Error(`Unknown opcode: ${inst.op}`);
+      default:
+        throw runtimeError(
+          `Unknown opcode: ${instruction.opcode}`,
+          "VM_OPCODE_UNKNOWN",
+        );
     }
-    if (snap) { snap.stackAfter = [...stack]; trace.push(snap); }
-  }
-  if (steps >= maxSteps) output.push("[EXECUTION LIMIT REACHED]");
 
-  const allVars = {};
-  for (const frame of scopeStack) for (const [k, v] of Object.entries(frame.vars)) allVars[k] = v;
-  return { output, trace, globals: allVars, steps, traceOverflow };
+    if (traceEntry) {
+      traceEntry.stackAfter = captureStack();
+      trace.push(traceEntry);
+    }
+  }
+
+  if (status === "running" && programCounter >= code.length) {
+    status = "halted";
+  }
+  if (status === "step_limit") {
+    output.push("[EXECUTION LIMIT REACHED]");
+  }
+
+  const globals = Object.create(null);
+  for (const [name, value] of rootScope.variables) globals[name] = value;
+
+  return {
+    status,
+    output,
+    trace,
+    globals,
+    steps,
+    traceOverflow,
+    traceCharacters,
+    outputTruncated,
+    outputTruncationReason,
+    stackDepth: stack.length,
+    callDepth: callStack.length,
+  };
 }
+
+export { DEFAULT_LIMITS };

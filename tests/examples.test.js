@@ -8,7 +8,9 @@ describe("bundled examples", () => {
   for (const [name, src] of Object.entries(EXAMPLES)) {
     it(`${name} runs clean and matches golden output`, () => {
       const r = compileAndRun(src);
-      expect(r.output.some(l => l.includes("[EXECUTION LIMIT REACHED]"))).toBe(false);
+      expect(
+        r.output.some((l) => l.includes("[EXECUTION LIMIT REACHED]")),
+      ).toBe(false);
       expect(r.output.join("\n")).toMatchSnapshot();
     });
   }
