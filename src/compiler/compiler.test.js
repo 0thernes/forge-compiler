@@ -392,7 +392,7 @@ describe("execution budgets and historical trace", () => {
     expect(result.outputTruncationReason).toBe("characters");
   });
 
-  it("uses the configured formatted-value character budget", () => {
+  it("keeps concatenation complete while print display stays bounded", () => {
     const result = compileSource(
       `let rendered = [12345] + ""; print([12345]);`,
       {
@@ -400,8 +400,50 @@ describe("execution budgets and historical trace", () => {
       },
     ).result;
 
-    expect(result.globals.rendered).toBe("[…]");
+    expect(result.globals.rendered).toBe("[12345]");
     expect(result.output).toEqual(["[…]"]);
+  });
+
+  it("rejects cyclic and over-deep array coercion instead of truncating values", () => {
+    expect(() =>
+      compileSource(`let value = [1]; push(value, value); print("" + value);`),
+    ).toThrow("contains itself");
+    expect(() =>
+      compileSource(
+        `let value = []; let depth = 0; while (depth < 40) { value = [value]; depth += 1; } print("" + value);`,
+      ),
+    ).toThrow("nested deeper");
+  });
+
+  it("classifies incomplete concatenation caused by string limits", () => {
+    const failures = [
+      () =>
+        compileSource(`print("" + [1, 2]);`, {
+          limits: { maxStringLength: 3 },
+        }),
+      () =>
+        compileSource(
+          `let value = [1];
+let depth = 0;
+while (depth < 18) { value = [value, value]; depth += 1; }
+let text = "" + value;`,
+        ),
+    ].map((run) => {
+      try {
+        run();
+        return null;
+      } catch (error) {
+        return error;
+      }
+    });
+
+    for (const failure of failures) {
+      expect(failure).toMatchObject({
+        phase: "execute",
+        code: "VM_STRING_LIMIT",
+      });
+      expect(failure.message).toContain("String length exceeds");
+    }
   });
 
   it("accounts for the step-limit marker through output quotas", () => {
