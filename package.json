@@ -1,6 +1,6 @@
 {
   "name": "forge-compiler",
-  "version": "14.0.1",
+  "version": "14.1.0",
   "private": true,
   "description": "A browser-based educational compiler and deterministic stack virtual machine for the FORGE language.",
   "license": "MIT",
@@ -26,7 +26,9 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
-    "verify:quality": "npm run format:check && npm run lint && npm run check:docs && npm run verify:metadata && npm run test:coverage",
+    "test:differential": "vitest run tests/differential.test.js",
+    "test:mutation": "node tools/mutation-test.mjs",
+    "verify:quality": "npm run format:check && npm run lint && npm run check:docs && npm run verify:metadata && npm run test:coverage && npm run test:mutation",
     "verify": "npm run verify:quality && npm run build && npm run check:artifact"
   },
   "engines": {

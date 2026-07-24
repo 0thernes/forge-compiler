@@ -4,10 +4,20 @@ All notable changes to FORGE are documented here.
 
 ## Unreleased
 
-## [14.0.1] - 2026-07-24
+## [14.1.0] - 2026-07-24
 
 ### Added
 
+- A complete mid-century workbench redesign: an atomic-age "Workshop" day
+  theme and an amber-phosphor "Night" terminal theme with a persistent
+  DAY/NITE switch, vendored IBM Plex typography, CRT-styled editor and output
+  screens, a run-status lamp cluster, and a responsive layout with
+  reduced-motion support.
+- A tree-walk reference interpreter that shares the compiler frontend but no
+  backend code, a differential gate of 167 corpus programs that must agree
+  across both engines, and a mutation-sensitivity proof that injects four bug
+  classes into a VM copy and requires the gate to catch every one
+  (`npm run test:mutation`, part of `verify:quality`).
 - Call-frame isolation for complete, re-entrant output records, including empty
   records and left-to-right argument evaluation and formatting.
 - Local checks for Markdown links, synchronized release metadata, production
@@ -57,6 +67,8 @@ All notable changes to FORGE are documented here.
   content checks.
 - Unexpected-character diagnostics preserve complete astral Unicode symbols
   instead of exposing one UTF-16 surrogate.
+- Comparison type errors name the surface operator (`<`, `>=`) instead of
+  internal opcode names.
 
 ## [14.0.0] - 2026-07-23
 
@@ -131,5 +143,5 @@ The original project was a single JSX compiler laboratory with an embedded
 example suite and browser-only self-test. Version 14 preserves that observable
 language behavior while replacing the monolithic delivery model.
 
-[14.0.1]: https://github.com/0thernes/forge-compiler/compare/v14.0.0...v14.0.1
+[14.1.0]: https://github.com/0thernes/forge-compiler/compare/v14.0.0...v14.1.0
 [14.0.0]: https://github.com/0thernes/forge-compiler/releases/tag/v14.0.0
