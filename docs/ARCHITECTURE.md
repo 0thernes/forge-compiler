@@ -42,13 +42,13 @@ position when available.
 | `analyze.js`         | Lexical scopes, declaration checks, call resolution, and arity  |
 | `codegen.js`         | Assembly generation, internal labels, and immutable linking     |
 | `vm.js`              | Iterative stack-machine execution and resource enforcement      |
-| `format.js`          | Bounded, cycle-aware value rendering                            |
+| `format.js`          | Cycle-aware display and concatenation value rendering           |
 | `ast.js`             | Human-readable AST rendering                                    |
 | `index.js`           | Stable public API and pipeline orchestration                    |
 | `compiler.worker.js` | Browser worker request boundary                                 |
 | `selfTest.js`        | Browser-visible compatibility verification                      |
 | `selfTestCases.js`   | Canonical self-test corpus consumed by `selfTest.js`            |
-| `examples.js`        | Canonical examples projected by the `src/examples.js` adapter   |
+| `examples.js`        | Canonical examples re-exported by the `src/examples.js` adapter |
 
 The files in `src/examples.js`, `src/self-test.js`, and the older helper module
 names are compatibility adapters. They project the canonical corpora and
@@ -121,6 +121,14 @@ state. Value formatting emits incrementally into one aggregate character
 budget, so truncated strings and arrays retain balanced delimiters without
 constructing an oversized intermediate value.
 
+Display rendering and language coercion deliberately have different policies.
+Output, trace, and inspector presentation use bounded character and item
+budgets. When `+` has a string operand, the VM requests a complete rendering of
+the other operand within `maxStringLength`, disables the display item cap, and
+rejects cycles or arrays beyond the formatting-depth boundary. An ellipsis can
+therefore describe a bounded display, but never silently becomes part of a
+program-visible concatenated string.
+
 Trace snapshots deep-copy arrays within explicit depth and item limits. This
 keeps historical rows stable after later mutation without allowing the
 inspector itself to grow without bound. Per-string and whole-trace character
@@ -144,8 +152,16 @@ in-flight completions, and clears previous artifacts after a current-source
 failure. Worker startup failure falls back immediately. A later cloning or
 transport failure rejects pending work, terminates the worker, and routes
 subsequent requests through the fallback. A versioned source draft is stored
-locally. Token, assembly, AST, output, global, and trace inspectors cap rendered
-content while compilation still uses the complete program.
+locally. The desktop workbench keeps the editor and selected inspector mounted
+side by side, while compact layouts expose an explicit source/inspector switch.
+Four system-font console palettes are selected through an accessible radio
+group and persisted separately from the draft.
+
+Token, assembly, and trace inspectors paginate complete result collections.
+AST, output, and global-state presentation retains explicit rendering limits
+while compilation still uses the complete program. The active inspector follows
+the WAI-ARIA tab interaction model, diagnostics can focus their source
+position, and live status uses one atomic announcement region.
 
 ## Verification and delivery
 
@@ -155,14 +171,22 @@ Vitest exercises:
   adapters;
 - v14 correctness and adversarial regressions;
 - compiler stage contracts, limits, and trace behavior;
+- 89 differential cases comparing VM output and cycle-safe final globals with
+  an independent tree-walk execution backend;
 - accessible React interactions.
 
 The local quality gate checks formatting, environment-specific ESLint rules,
-local Markdown links, synchronized package/lock/compiler versions, coverage
-thresholds, a production build, and its expected artifact contents. One CI
-workflow runs that gate plus the dependency audit on every main-branch push and
-pull request. Only the verified `main` artifact can flow to the serialized Pages
-deployment job.
+local Markdown links, synchronized package/lock/compiler/language versions,
+matching changelog metadata, coverage thresholds, a pristine differential
+baseline, four targeted mutation killers, a production build, and its expected
+artifact contents. The differential interpreter independently implements
+environments, control flow, built-ins, coercion, and formatting while
+intentionally sharing the lexer, parser, and semantic analyzer. Shared-front-end
+and resource-policy cases are tagged so their scope is not overstated.
+
+One CI workflow runs that gate plus the dependency audit on every main-branch
+push and pull request. Only the verified `main` artifact can flow to the
+serialized Pages deployment job.
 
 The Release workflow separates validation from mutation. Pull requests exercise
 its read-only portable build, archive/SBOM/checksum creation, and artifact

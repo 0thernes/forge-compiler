@@ -10,7 +10,26 @@ the implementation can be explored instead of treated as a black box.
 
 **[Open the live compiler](https://0thernes.github.io/forge-compiler/)**
 
-## What changed in v14
+## What changed in v14.1
+
+Version 14.1 adds a backend-independent execution oracle and turns the
+interface into an adaptive retro-future compiler laboratory:
+
+- a backend-independent AST tree-walk interpreter cross-checks the production
+  stack-machine backend across 89 curated differential cases;
+- a mutation-sensitivity gate proves that the corpus detects relational,
+  arithmetic, scope, and short-circuit code-generation defects;
+- string concatenation preserves complete program-visible values up to the
+  string limit instead of silently reusing display truncation;
+- Atomic 1958, Orbit 1966, Analog 1977, and Neon 1984 console themes provide
+  identifiable palettes without external font or asset dependencies;
+- a persistent source/inspector workbench becomes an explicit one-pane switch
+  on compact screens, with paginated large artifacts, clearer pipeline timing,
+  one-step example undo, and source-position error navigation;
+- expanded keyboard, focus, forced-color, reduced-motion, responsive, and live
+  status behavior keeps the physical-console presentation accessible.
+
+## Version 14 foundation
 
 Version 14 turns the original v13 single-file experiment into a tested,
 maintainable project:
@@ -27,7 +46,7 @@ maintainable project:
 - immutable trace snapshots and retained final globals;
 - compilation in a Web Worker to keep the interface responsive;
 - versioned local draft persistence and stale-request protection;
-- 200+ automated tests, coverage thresholds, linting, formatting, production
+- 340+ automated tests, coverage thresholds, linting, formatting, production
   builds, dependency updates, and GitHub Pages deployment.
 
 The original v13 import paths remain as compatibility adapters to one canonical
@@ -75,19 +94,20 @@ transport fails, compilation falls back to the main thread. CI exercises the
 interface in jsdom rather than a cross-browser end-to-end matrix, so older and
 embedded browsers outside this baseline are best effort.
 
-| Command                   | Purpose                                                 |
-| ------------------------- | ------------------------------------------------------- |
-| `npm run dev`             | Start the Vite development server                       |
-| `npm test`                | Run the complete Vitest suite once                      |
-| `npm run test:coverage`   | Run tests and enforce core coverage thresholds          |
-| `npm run lint`            | Run environment-specific ESLint checks                  |
-| `npm run format:check`    | Check Prettier formatting                               |
-| `npm run check:docs`      | Validate local Markdown links                           |
-| `npm run verify:metadata` | Check package, lockfile, and compiler version agreement |
-| `npm run build`           | Create the production bundle in `dist/`                 |
-| `npm run check:artifact`  | Validate the existing production bundle                 |
-| `npm run verify:quality`  | Run formatting, lint, docs, metadata, and coverage      |
-| `npm run verify`          | Run the local quality gate, build, and artifact check   |
+| Command                   | Purpose                                                     |
+| ------------------------- | ----------------------------------------------------------- |
+| `npm run dev`             | Start the Vite development server                           |
+| `npm test`                | Run the complete Vitest suite once                          |
+| `npm run test:coverage`   | Run tests and enforce core coverage thresholds              |
+| `npm run verify:mutation` | Prove the differential corpus kills four targeted mutants   |
+| `npm run lint`            | Run environment-specific ESLint checks                      |
+| `npm run format:check`    | Check Prettier formatting                                   |
+| `npm run check:docs`      | Validate local Markdown links                               |
+| `npm run verify:metadata` | Check release versions and required changelog agreement     |
+| `npm run build`           | Create the production bundle in `dist/`                     |
+| `npm run check:artifact`  | Validate the existing production bundle                     |
+| `npm run verify:quality`  | Run formatting, lint, docs, metadata, coverage, and mutants |
+| `npm run verify`          | Run the local quality gate, build, and artifact check       |
 
 Pushes to `main` and pull requests targeting `main` run the quality gate and
 dependency audit with SHA-pinned actions; pull requests also receive dependency
@@ -96,8 +116,10 @@ requests exercise portable release packaging and the read-only artifact
 handoff. Version tags additionally verify release metadata and `main` ancestry,
 then a separate minimal-write job creates or updates the draft GitHub Release.
 The static-site archives include a root README with portable hosting
-instructions, alongside a build-dependency CycloneDX SBOM and checksums.
-Publication makes the release tag and assets immutable.
+instructions, alongside a build-dependency CycloneDX SBOM and checksums. The
+publisher refuses to replace assets on an existing published release; when the
+repository's release-immutability setting is enabled, publication also locks
+the release and its tag.
 
 ## Pipeline
 

@@ -4,6 +4,44 @@ All notable changes to FORGE are documented here.
 
 ## Unreleased
 
+## [14.1.0] - 2026-07-24
+
+### Added
+
+- A backend-independent AST tree-walk interpreter and 89-case differential
+  corpus covering canonical examples, conformance cases, focused backend
+  regressions, shared-front-end failures, and explicit resource-policy
+  behavior.
+- A mutation-sensitivity quality gate with a pristine baseline and named
+  killers for comparison, modulo, lexical-scope, and short-circuit code
+  generation defects.
+- Four accessible console appearances inspired by 1958, 1966, 1977, and 1984,
+  persisted locally without external font or image dependencies.
+- Inspector pagination, one-step example undo, pipeline timing readouts, a
+  compact-screen source/inspector switch, a skip link, and direct
+  source-position navigation from diagnostics.
+
+### Changed
+
+- The desktop interface now keeps source and compiler artifacts visible in a
+  responsive split workbench; compact screens use an explicit single-pane
+  mode.
+- Large token, assembly, and trace views paginate instead of mounting their
+  entire result sets, while existing AST, output, and global-state display
+  limits remain explicit.
+- Program-visible string concatenation renders complete non-string operands up
+  to `maxStringLength`; presentation formatting remains independently bounded.
+- The local and CI quality gate now verifies that the backend-independent
+  differential corpus detects four seeded compiler defects.
+
+### Fixed
+
+- Concatenating a string with a large array no longer silently embeds a display
+  ellipsis or drops later elements.
+- Cyclic or over-deep arrays now fail string concatenation explicitly rather
+  than producing a value that only looked complete.
+- Successful runs no longer steal focus from the source editor.
+
 ## [14.0.1] - 2026-07-24
 
 ### Added
@@ -118,5 +156,6 @@ The original project was a single JSX compiler laboratory with an embedded
 example suite and browser-only self-test. Version 14 preserves that observable
 language behavior while replacing the monolithic delivery model.
 
+[14.1.0]: https://github.com/0thernes/forge-compiler/compare/v14.0.1...v14.1.0
 [14.0.1]: https://github.com/0thernes/forge-compiler/compare/v14.0.0...v14.0.1
 [14.0.0]: https://github.com/0thernes/forge-compiler/releases/tag/v14.0.0
