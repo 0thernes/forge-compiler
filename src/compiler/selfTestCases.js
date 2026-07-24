@@ -259,6 +259,11 @@ export const SELF_TEST_CASES = Object.freeze([
     expectedOutput: "2",
   },
   {
+    name: "comparison type errors name the surface operator",
+    source: `print(1 < "2");`,
+    errorIncludes: "'<' requires numbers",
+  },
+  {
     name: "char_at returns the code unit at a valid index",
     source: `print(char_at("hi", 1));`,
     expectedOutput: "i",
