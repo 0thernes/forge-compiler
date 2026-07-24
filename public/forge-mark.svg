@@ -1,5 +1,12 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="FORGE">
-  <rect width="64" height="64" rx="14" fill="#0b1017"/>
-  <path d="M17 14h34v8H27v8h20v8H27v14H17z" fill="#b7f397"/>
-  <path d="M47 42h8v10h-8z" fill="#70d7e7"/>
+  <defs>
+    <radialGradient id="heat" cx="0.3" cy="0.2" r="1.2">
+      <stop offset="0" stop-color="#d4571d"/>
+      <stop offset="1" stop-color="#b04214"/>
+    </radialGradient>
+  </defs>
+  <rect x="1.5" y="1.5" width="61" height="61" rx="14" fill="url(#heat)" stroke="#2c2318" stroke-width="3"/>
+  <rect x="7" y="7" width="50" height="50" rx="10" fill="none" stroke="#faf3e3" stroke-opacity="0.28" stroke-width="3"/>
+  <path d="M20 15h26v8H29v9h15v8H29v17h-9z" fill="#faf3e3"/>
+  <rect x="41" y="46" width="8" height="8" fill="#ffb020"/>
 </svg>

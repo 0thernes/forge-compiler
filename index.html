@@ -7,9 +7,59 @@
       name="description"
       content="Explore the FORGE language from source tokens to stack-machine execution."
     />
-    <meta name="theme-color" content="#080b10" />
+    <meta
+      name="theme-color"
+      media="(prefers-color-scheme: light)"
+      content="#f2e8d5"
+    />
+    <meta
+      name="theme-color"
+      media="(prefers-color-scheme: dark)"
+      content="#14100a"
+    />
     <link rel="icon" href="./forge-mark.svg" type="image/svg+xml" />
-    <title>FORGE Compiler</title>
+    <link
+      rel="preload"
+      href="./fonts/PlexMono-Regular.woff2"
+      as="font"
+      type="font/woff2"
+      crossorigin
+    />
+    <link
+      rel="preload"
+      href="./fonts/PlexSans-Regular.woff2"
+      as="font"
+      type="font/woff2"
+      crossorigin
+    />
+    <link
+      rel="preload"
+      href="./fonts/PlexSans-Bold.woff2"
+      as="font"
+      type="font/woff2"
+      crossorigin
+    />
+    <link
+      rel="preload"
+      href="./fonts/PlexSansCondensed-Bold.woff2"
+      as="font"
+      type="font/woff2"
+      crossorigin
+    />
+    <title>FORGE — Compiler Workbench</title>
+    <script>
+      try {
+        var theme = localStorage.getItem("forge-compiler:theme");
+        if (theme !== "day" && theme !== "night") {
+          theme = matchMedia("(prefers-color-scheme: dark)").matches
+            ? "night"
+            : "day";
+        }
+        document.documentElement.dataset.theme = theme;
+      } catch (error) {
+        document.documentElement.dataset.theme = "day";
+      }
+    </script>
   </head>
   <body>
     <noscript>FORGE Compiler requires JavaScript to run.</noscript>

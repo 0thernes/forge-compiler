@@ -29,6 +29,20 @@ const MAX_INSPECTOR_VALUE_CHARACTERS = 2_000;
 const MAX_AST_SOURCE_CHARACTERS = 50_000;
 const DRAFT_KEY = "forge-compiler:draft";
 const DRAFT_VERSION = 1;
+const THEME_KEY = "forge-compiler:theme";
+
+function loadTheme() {
+  if (typeof window === "undefined") return "day";
+  try {
+    const saved = window.localStorage.getItem(THEME_KEY);
+    if (saved === "day" || saved === "night") return saved;
+  } catch {
+    // Storage may be unavailable; fall through to the system preference.
+  }
+  return window.matchMedia?.("(prefers-color-scheme: dark)")?.matches
+    ? "night"
+    : "day";
+}
 
 function tokenTone(token) {
   if (token.type === T.NUM) return "number";
@@ -113,6 +127,7 @@ function loadDraft() {
 
 export default function ForgeCompiler() {
   const [source, setSource] = useState(loadDraft);
+  const [theme, setTheme] = useState(loadTheme);
   const [activeTab, setActiveTab] = useState("source");
   const [compilation, setCompilation] = useState(null);
   const [error, setError] = useState(null);
@@ -311,6 +326,15 @@ export default function ForgeCompiler() {
     };
   }, []);
 
+  useEffect(() => {
+    document.documentElement.dataset.theme = theme;
+    try {
+      window.localStorage.setItem(THEME_KEY, theme);
+    } catch {
+      // Theme persistence is best-effort in restricted browser contexts.
+    }
+  }, [theme]);
+
   const handleEditorKeyDown = useCallback(
     (event) => {
       if (event.key === "Tab" && !event.shiftKey) {
@@ -409,6 +433,28 @@ export default function ForgeCompiler() {
         </div>
 
         <div className="header-actions">
+          <div
+            className="status-cluster"
+            data-state={
+              isCompiling || isVerifying
+                ? "run"
+                : error
+                  ? "err"
+                  : compilation
+                    ? "ok"
+                    : "idle"
+            }
+            aria-hidden="true"
+          >
+            <span className="led" />
+            {isCompiling || isVerifying
+              ? "BUSY"
+              : error
+                ? "FAULT"
+                : compilation
+                  ? "READY"
+                  : "IDLE"}
+          </div>
           <label className="select-field">
             <span>Example</span>
             <select
@@ -442,6 +488,19 @@ export default function ForgeCompiler() {
           >
             {isCompiling ? "Running…" : "Run program"}
             <kbd>⌘↵</kbd>
+          </button>
+          <button
+            className="button theme-toggle"
+            type="button"
+            onClick={() => setTheme(theme === "night" ? "day" : "night")}
+            aria-pressed={theme === "night"}
+            aria-label={
+              theme === "night"
+                ? "Switch to day theme"
+                : "Switch to night theme"
+            }
+          >
+            {theme === "night" ? "DAY" : "NITE"}
           </button>
         </div>
       </header>
