@@ -19,7 +19,8 @@ npm run verify
 
 This checks formatting, lint, documentation and release metadata, core coverage
 thresholds, all compatibility and UI tests, the differential corpus and
-mutation-sensitivity gate, and the production build.
+mutation-sensitivity gate, the production build, and its expected artifact
+contents.
 
 ## Compiler changes
 

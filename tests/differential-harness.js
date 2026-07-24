@@ -1,11 +1,16 @@
-import { interpretSource } from "../src/compiler/interpreter.js";
+import {
+  interpretSource,
+  REFERENCE_CALL_DEPTH_CAP,
+} from "../src/compiler/interpreter.js";
 import { DIFFERENTIAL_CASES } from "./differential-corpus.js";
+
+export { REFERENCE_CALL_DEPTH_CAP };
 
 // Oracle boundary: the reference interpreter takes (source, options) where
 // options may carry { limits } overrides, and returns the same result shape
 // as the VM ({ status, output, globals, ... }). Runners passed to
 // compareDifferentialCase must accept the same (source, options) pair.
-function runReference(source, options) {
+export function runReference(source, options) {
   return interpretSource(source, options ?? {});
 }
 
@@ -61,8 +66,22 @@ export function compareDifferentialCase(
   vmRunner,
   referenceRunner = runReference,
 ) {
-  const vm = capture(vmRunner, testCase.source, testCase.options);
-  const reference = capture(referenceRunner, testCase.source, testCase.options);
+  // Cases may declare limit overrides as `limits` or `options.limits`; both
+  // engines always run with an identical, host-recursion-safe call depth so
+  // a JS stack overflow in the tree-walk oracle can never masquerade as a
+  // FORGE limit result.
+  const limits = {
+    maxCallDepth: REFERENCE_CALL_DEPTH_CAP,
+    ...(testCase.limits ?? testCase.options?.limits),
+  };
+  if (limits.maxCallDepth > REFERENCE_CALL_DEPTH_CAP) {
+    throw new Error(
+      `Differential case ${JSON.stringify(testCase.name)} requests maxCallDepth ${limits.maxCallDepth}, above the ${REFERENCE_CALL_DEPTH_CAP}-frame reference-interpreter cap`,
+    );
+  }
+  const options = { ...testCase.options, limits };
+  const vm = capture(vmRunner, testCase.source, options);
+  const reference = capture(referenceRunner, testCase.source, options);
 
   if (testCase.errorIncludes) {
     if (!vm.error || !reference.error) {

@@ -78,8 +78,27 @@ function countNewlines(value) {
   return count;
 }
 
+// The tree-walk oracle evaluates FORGE calls with host recursion, so its
+// usable call depth is bounded by the JS stack, not by maxCallDepth alone.
+// Runs must stay under this host-safe cap: an explicit request above it is
+// refused loudly, and the default limit is clamped down to it.
+export const REFERENCE_CALL_DEPTH_CAP = 256;
+
 export function interpretSource(source, options = {}) {
+  const requestedCallDepth =
+    options?.limits?.maxCallDepth ?? options?.maxCallDepth;
+  if (
+    typeof requestedCallDepth === "number" &&
+    requestedCallDepth > REFERENCE_CALL_DEPTH_CAP
+  ) {
+    throw new Error(
+      `Reference interpreter cannot exceed its ${REFERENCE_CALL_DEPTH_CAP}-frame operational cap (maxCallDepth ${requestedCallDepth} requested)`,
+    );
+  }
   const limits = interpreterLimits(options);
+  if (limits.maxCallDepth > REFERENCE_CALL_DEPTH_CAP) {
+    limits.maxCallDepth = REFERENCE_CALL_DEPTH_CAP;
+  }
   try {
     const tokens = lex(source, limits);
     const ast = parse(tokens, limits);

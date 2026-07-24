@@ -8,15 +8,23 @@ All notable changes to FORGE are documented here.
 
 ### Added
 
-- A backend-independent AST tree-walk interpreter and 89-case differential
+- A backend-independent AST tree-walk interpreter and 173-case differential
   corpus covering canonical examples, conformance cases, focused backend
   regressions, shared-front-end failures, and explicit resource-policy
-  behavior.
+  behavior. The oracle mirrors the VM's full observable contract —
+  execution-limit status, output caps and truncation markers, and per-case
+  validators — and every self-test pin runs through both engines.
 - A mutation-sensitivity quality gate with a pristine baseline and named
-  killers for comparison, modulo, lexical-scope, and short-circuit code
-  generation defects.
+  killers for comparison, modulo, caller-environment, short-circuit,
+  scope-entry, and closure-capture defects.
+- A `runSelfTest` failure-branch suite and a worker verify-report
+  structured-clone test, so the in-app verifier itself is verified.
 - Four accessible console appearances inspired by 1958, 1966, 1977, and 1984,
   persisted locally without external font or image dependencies.
+- Vendored IBM Plex Sans, Mono, and Sans Condensed (OFL) with font preloading
+  and a pre-paint era bootstrap, replacing display stacks that silently fell
+  back to system fonts; era accents deepened so primary controls meet
+  WCAG AA in every era.
 - Inspector pagination, one-step example undo, pipeline timing readouts, a
   compact-screen source/inspector switch, a skip link, and direct
   source-position navigation from diagnostics.
@@ -32,7 +40,10 @@ All notable changes to FORGE are documented here.
 - Program-visible string concatenation renders complete non-string operands up
   to `maxStringLength`; presentation formatting remains independently bounded.
 - The local and CI quality gate now verifies that the backend-independent
-  differential corpus detects four seeded compiler defects.
+  differential corpus detects six seeded compiler defects.
+- Differential execution applies the reference interpreter's conservative
+  256-frame operational cap to both engines while production keeps its
+  iterative 50,000-frame default.
 
 ### Fixed
 
@@ -40,6 +51,8 @@ All notable changes to FORGE are documented here.
   ellipsis or drops later elements.
 - Cyclic or over-deep arrays now fail string concatenation explicitly rather
   than producing a value that only looked complete.
+- Comparison type errors name the surface operator (`<`, `>=`) instead of
+  internal opcode names.
 - Successful runs no longer steal focus from the source editor.
 
 ## [14.0.1] - 2026-07-24

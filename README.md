@@ -16,7 +16,7 @@ Version 14.1 adds a backend-independent execution oracle and turns the
 interface into an adaptive retro-future compiler laboratory:
 
 - a backend-independent AST tree-walk interpreter cross-checks the production
-  stack-machine backend across 89 curated differential cases;
+  stack-machine backend across 92 curated differential cases;
 - a mutation-sensitivity gate proves that the corpus detects relational,
   arithmetic, scope, and short-circuit code-generation defects;
 - string concatenation preserves complete program-visible values up to the
@@ -108,6 +108,11 @@ embedded browsers outside this baseline are best effort.
 | `npm run check:artifact`  | Validate the existing production bundle                     |
 | `npm run verify:quality`  | Run formatting, lint, docs, metadata, coverage, and mutants |
 | `npm run verify`          | Run the local quality gate, build, and artifact check       |
+
+The tree-walk oracle uses a conservative 256-frame operational cap, applied to
+both differential engines, so host recursion cannot mask a FORGE limit result.
+The production VM remains iterative with its 50,000-frame default and has
+separate coverage proving 20,000 recursive calls do not consume the host stack.
 
 Pushes to `main` and pull requests targeting `main` run the quality gate and
 dependency audit with SHA-pinned actions; pull requests also receive dependency

@@ -1327,8 +1327,8 @@ a:focus-visible {
   color: var(--ready);
   font-size: 13px;
   line-height: 1.7;
+  overflow-wrap: anywhere;
   white-space: pre-wrap;
-  word-break: break-word;
 }
 
 .globals-card {
