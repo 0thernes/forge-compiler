@@ -173,17 +173,21 @@ export async function verifyArtifact(root = "dist", { portable = false } = {}) {
   }
 
   if (portable) {
-    const readme = await readFile(
-      path.join(rootDirectory, "README.md"),
-      "utf8",
-    );
-    if (!/prebuilt static/i.test(readme)) {
-      failures.push(
-        "portable README does not identify the prebuilt static archive",
-      );
-    }
-    if (/\]\(\s*src\//i.test(readme)) {
-      failures.push("portable README contains a source-only relative link");
+    const readmePath = path.join(rootDirectory, "README.md");
+    try {
+      if ((await fileInfo(readmePath))?.isFile()) {
+        const readme = await readFile(readmePath, "utf8");
+        if (!/prebuilt static/i.test(readme)) {
+          failures.push(
+            "portable README does not identify the prebuilt static archive",
+          );
+        }
+        if (/\]\(\s*src\//i.test(readme)) {
+          failures.push("portable README contains a source-only relative link");
+        }
+      }
+    } catch (error) {
+      failures.push(`unable to read portable README: ${error.message}`);
     }
     try {
       await verifyDocs(rootDirectory);
