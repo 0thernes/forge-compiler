@@ -1,6 +1,8 @@
 import { describe, it, expect } from "vitest";
 import {
   compileAndRun,
+  compileSource,
+  execute,
   lex,
   parse,
   codegen,
@@ -115,17 +117,17 @@ describe("VM semantics", () => {
     expect(() => run(`print(1 < "2");`)).toThrow("requires numbers");
   });
 
-  it("calling with wrong arity in a nested call reports correctly", () => {
+  it("the analyzer reports wrong arity in a nested call before execution", () => {
     expect(() => run(`fn g(a, b) { return a + b; } print(g(1));`)).toThrow(
       "Expected 2 argument(s) but got 1",
     );
   });
 
-  it("undefined variables error at runtime with the name", () => {
+  it("the analyzer reports undefined variables with the name", () => {
     expect(() => run(`print(missing);`)).toThrow("Undefined variable: missing");
   });
 
-  it("assignment to undeclared variables suggests let", () => {
+  it("the analyzer suggests let for assignment to undeclared variables", () => {
     expect(() => run(`ghost = 1;`)).toThrow("Use 'let ghost = ...' first");
   });
 
@@ -178,5 +180,35 @@ describe("linker", () => {
     expect(() => link(codegen(parse(lex(`if (false) { nope(); }`))))).toThrow(
       "Undefined function: nope",
     );
+  });
+});
+
+describe("VM guardrails without the analyzer", () => {
+  it("LOAD of an undeclared name fails with the variable name", () => {
+    expect(() =>
+      execute([{ opcode: "LOAD", argument: "ghost" }, { opcode: "HALT" }]),
+    ).toThrow("Undefined variable: ghost");
+  });
+
+  it("STORE to an undeclared name suggests let", () => {
+    expect(() =>
+      execute([
+        { opcode: "PUSH", argument: 1 },
+        { opcode: "STORE", argument: "ghost" },
+        { opcode: "HALT" },
+      ]),
+    ).toThrow("Use 'let ghost = ...' first");
+  });
+
+  it("CHECK_ARGUMENT_COUNT enforces arity inside a real call frame", () => {
+    const { assembly } = compileSource(`fn g(a) { return a; } g(1);`, {
+      run: false,
+    });
+    const tampered = assembly.map((instruction) =>
+      instruction.opcode === "CHECK_ARGUMENT_COUNT"
+        ? { ...instruction, argument: 2, arg: 2 }
+        : instruction,
+    );
+    expect(() => execute(tampered)).toThrow("Expected 2 argument(s) but got 1");
   });
 });
