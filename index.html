@@ -7,9 +7,62 @@
       name="description"
       content="Explore FORGE in an adaptive retro compiler lab, from source tokens to stack-machine execution."
     />
-    <meta name="theme-color" content="#241912" />
+    <meta
+      name="theme-color"
+      media="(prefers-color-scheme: light)"
+      content="#d9c6a3"
+    />
+    <meta
+      name="theme-color"
+      media="(prefers-color-scheme: dark)"
+      content="#20213b"
+    />
     <link rel="icon" href="./forge-mark.svg" type="image/svg+xml" />
+    <link
+      rel="preload"
+      href="./fonts/PlexMono-Regular.woff2"
+      as="font"
+      type="font/woff2"
+      crossorigin
+    />
+    <link
+      rel="preload"
+      href="./fonts/PlexSans-Regular.woff2"
+      as="font"
+      type="font/woff2"
+      crossorigin
+    />
+    <link
+      rel="preload"
+      href="./fonts/PlexSans-Bold.woff2"
+      as="font"
+      type="font/woff2"
+      crossorigin
+    />
+    <link
+      rel="preload"
+      href="./fonts/PlexSansCondensed-Bold.woff2"
+      as="font"
+      type="font/woff2"
+      crossorigin
+    />
     <title>FORGE Compiler · Retro Lab</title>
+    <script>
+      try {
+        var era = localStorage.getItem("forge-compiler:era");
+        if (
+          era !== "atomic" &&
+          era !== "orbit" &&
+          era !== "analog" &&
+          era !== "neon"
+        ) {
+          era = "analog";
+        }
+        document.documentElement.dataset.era = era;
+      } catch (error) {
+        document.documentElement.dataset.era = "analog";
+      }
+    </script>
   </head>
   <body>
     <noscript>FORGE Compiler requires JavaScript to run.</noscript>

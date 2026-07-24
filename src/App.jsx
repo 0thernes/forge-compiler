@@ -423,6 +423,9 @@ export default function ForgeCompiler() {
   }, [source]);
 
   useEffect(() => {
+    // Mirror the era onto <html> so the pre-paint bootstrap in index.html and
+    // the live UI never disagree; React owns this attribute after hydration.
+    document.documentElement.dataset.era = era;
     try {
       window.localStorage.setItem(ERA_KEY, era);
     } catch {

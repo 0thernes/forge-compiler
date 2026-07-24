@@ -1,6 +1,53 @@
+/* Vendored IBM Plex faces. The ../fonts/… URLs are deliberate: they resolve
+   relative to the emitted CSS asset, so they stay correct under any deploy
+   base path (e.g. GitHub Pages /forge-compiler/). */
+@font-face {
+  font-family: "IBM Plex Mono";
+  src: url("../fonts/PlexMono-Regular.woff2") format("woff2");
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: "IBM Plex Mono";
+  src: url("../fonts/PlexMono-SemiBold.woff2") format("woff2");
+  font-weight: 600;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: "IBM Plex Sans";
+  src: url("../fonts/PlexSans-Regular.woff2") format("woff2");
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: "IBM Plex Sans";
+  src: url("../fonts/PlexSans-Medium.woff2") format("woff2");
+  font-weight: 500;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: "IBM Plex Sans";
+  src: url("../fonts/PlexSans-Bold.woff2") format("woff2");
+  font-weight: 700;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: "IBM Plex Sans Condensed";
+  src: url("../fonts/PlexSansCondensed-Bold.woff2") format("woff2");
+  font-weight: 700;
+  font-style: normal;
+  font-display: swap;
+}
+
 :root {
   color-scheme: dark;
   font-family:
+    "IBM Plex Sans",
     "Avenir Next",
     "Avenir",
     "Segoe UI",
@@ -12,12 +59,14 @@
   font-synthesis: none;
   text-rendering: optimizeLegibility;
   --font-display:
-    "Futura", "Avenir Next Condensed", "Century Gothic", "Trebuchet MS",
+    "IBM Plex Sans Condensed", "Futura", "Avenir Next Condensed",
+    "Century Gothic", "Trebuchet MS", sans-serif;
+  --font-label:
+    "IBM Plex Sans", "Franklin Gothic Medium", "Avenir Next", "Segoe UI",
     sans-serif;
-  --font-label: "Franklin Gothic Medium", "Avenir Next", "Segoe UI", sans-serif;
   --font-mono:
-    "Cascadia Code", "SFMono-Regular", "Roboto Mono", "Consolas",
-    "Liberation Mono", monospace;
+    "IBM Plex Mono", "Cascadia Code", "SFMono-Regular", "Roboto Mono",
+    "Consolas", "Liberation Mono", monospace;
 }
 
 * {
@@ -28,6 +77,34 @@ html {
   min-width: 320px;
   min-height: 100%;
   background: #111816;
+}
+
+/* Pre-paint era chrome: an inline script in index.html stamps data-era on
+   <html> before first paint, so the backdrop matches the persisted era
+   instead of flashing the default background. React re-stamps the same
+   attribute after hydration and stays the source of truth. */
+html[data-era="atomic"],
+html[data-era="atomic"] body {
+  background: #f1e2be;
+  color-scheme: light;
+}
+
+html[data-era="orbit"],
+html[data-era="orbit"] body {
+  background: #d8e2df;
+  color-scheme: light;
+}
+
+html[data-era="analog"],
+html[data-era="analog"] body {
+  background: #d9c6a3;
+  color-scheme: light;
+}
+
+html[data-era="neon"],
+html[data-era="neon"] body {
+  background: #20213b;
+  color-scheme: dark;
 }
 
 body {
@@ -74,7 +151,7 @@ kbd {
   --screen-raised: #1a251f;
   --screen-text: #e4ecd7;
   --screen-muted: #aebca8;
-  --accent: #d85c31;
+  --accent: #b84a23;
   --accent-ink: #fff9e8;
   --accent-two: #5e743c;
   --accent-three: #e3a72f;
@@ -111,7 +188,7 @@ kbd {
   --screen-raised: #143632;
   --screen-text: #e2f0dc;
   --screen-muted: #a6c3b5;
-  --accent: #db473c;
+  --accent: #c73d33;
   --accent-ink: #fff8e8;
   --accent-two: #147a73;
   --accent-three: #dda72f;
@@ -124,8 +201,8 @@ kbd {
   --focus: #005f9e;
   --grid-line: rgb(118 219 213 / 7%);
   --font-display:
-    Futura, "Century Gothic", "Avenir Next Condensed", "Trebuchet MS",
-    sans-serif;
+    "IBM Plex Sans Condensed", Futura, "Century Gothic",
+    "Avenir Next Condensed", "Trebuchet MS", sans-serif;
 }
 
 .app-shell[data-era="orbit"] {
@@ -138,7 +215,7 @@ kbd {
   --screen-raised: #122542;
   --screen-text: #e4f2ef;
   --screen-muted: #a9c3c8;
-  --accent: #e95349;
+  --accent: #d43a2f;
   --accent-ink: #fff;
   --accent-two: #285ca8;
   --accent-three: #e0b02c;
@@ -151,7 +228,8 @@ kbd {
   --focus: #005bbb;
   --grid-line: rgb(128 221 232 / 7%);
   --font-display:
-    Eurostile, Microgramma, "Arial Narrow", "Avenir Next Condensed", sans-serif;
+    "IBM Plex Sans Condensed", Eurostile, Microgramma, "Arial Narrow",
+    "Avenir Next Condensed", sans-serif;
 }
 
 .app-shell[data-era="neon"] {
@@ -177,8 +255,8 @@ kbd {
   --focus: #86ecff;
   --grid-line: rgb(47 214 227 / 8%);
   --font-display:
-    "Bank Gothic", Eurostile, "Arial Narrow", "Avenir Next Condensed",
-    sans-serif;
+    "IBM Plex Sans Condensed", "Bank Gothic", Eurostile, "Arial Narrow",
+    "Avenir Next Condensed", sans-serif;
   color-scheme: dark;
 }
 
