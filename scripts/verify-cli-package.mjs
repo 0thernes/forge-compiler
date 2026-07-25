@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { packCliPackage } from "./cli-package.mjs";
+import { npmInvocation } from "./npm-invocation.mjs";
 import { verifyDocs } from "./verify-docs.mjs";
 
 const REQUIRED_FILES = new Set([
@@ -21,19 +22,6 @@ const REQUIRED_FILES = new Set([
   "src/compiler/capabilities.js",
   "src/compiler/index.js",
 ]);
-
-function npmInvocation() {
-  if (process.env.npm_execpath) {
-    return {
-      command: process.execPath,
-      arguments: [process.env.npm_execpath],
-    };
-  }
-  return {
-    command: process.platform === "win32" ? "npm.cmd" : "npm",
-    arguments: [],
-  };
-}
 
 function runInstalledForge(shim, args, options = {}) {
   if (process.platform === "win32") {

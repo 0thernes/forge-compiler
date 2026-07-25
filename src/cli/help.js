@@ -34,6 +34,7 @@ General:
   --                     Stop option parsing
 
 Input defaults to stdin for an explicit run, check, or compile command.
+-h/--help and -V/--version take precedence over commands and source arguments.
 Human run mode reserves stdout for program output. JSON mode always writes a
 single protocol document to stdout, including diagnostics on failure.
 `;

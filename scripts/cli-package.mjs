@@ -11,6 +11,7 @@ import {
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { npmInvocation } from "./npm-invocation.mjs";
 
 const REPOSITORY_ROOT = fileURLToPath(new URL("../", import.meta.url));
 
@@ -40,19 +41,6 @@ export const CLI_PACKAGE_FILES = Object.freeze([
   ["LICENSE", "LICENSE"],
   ["SECURITY.md", "SECURITY.md"],
 ]);
-
-function npmInvocation() {
-  if (process.env.npm_execpath) {
-    return {
-      command: process.execPath,
-      arguments: [process.env.npm_execpath],
-    };
-  }
-  return {
-    command: process.platform === "win32" ? "npm.cmd" : "npm",
-    arguments: [],
-  };
-}
 
 function cliManifest(repositoryManifest) {
   return {

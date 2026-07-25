@@ -2038,9 +2038,6 @@ td:last-child {
   .capability-deck__disclosure {
     grid-column: 2;
     grid-row: 1;
-  }
-
-  .capability-deck__disclosure {
     font-size: 0;
   }
 

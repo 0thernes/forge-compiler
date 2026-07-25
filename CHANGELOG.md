@@ -39,6 +39,9 @@ All notable changes to FORGE are documented here.
 - Pre-decode input and encoded protocol output are independently bounded;
   limit overrides are tightening-only, and human operational text escapes
   terminal and bidirectional controls.
+- Values rendered inside arrays or concatenated strings now escape terminal,
+  bidirectional, and invisible formatting controls; direct human `run` string
+  output remains verbatim.
 - Compiler capability declarations are generated from the same version and
   limit constants used by execution instead of duplicating UI claims.
 - Release packaging now produces and smoke-tests a focused CLI `.tgz` alongside

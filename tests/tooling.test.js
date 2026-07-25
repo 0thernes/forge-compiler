@@ -2,6 +2,7 @@ import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
+import { npmInvocation } from "../scripts/npm-invocation.mjs";
 import { renderPortableReadme } from "../scripts/prepare-portable-readme.mjs";
 import { verifyArtifact } from "../scripts/verify-artifact.mjs";
 import { verifyDocs } from "../scripts/verify-docs.mjs";
@@ -26,6 +27,44 @@ async function temporaryRoot(prefix) {
 }
 
 describe("repository verification tools", () => {
+  it("reuses npm's CLI entry point", () => {
+    expect(
+      npmInvocation({
+        npmExecPath: "C:\\tools\\npm\\bin\\npm-cli.js",
+        nodeExecutable: "node.exe",
+        platform: "win32",
+      }),
+    ).toEqual({
+      command: "node.exe",
+      arguments: ["C:\\tools\\npm\\bin\\npm-cli.js"],
+    });
+  });
+
+  it.each([
+    [
+      "C:\\tools\\pnpm\\pnpm.cjs",
+      "win32",
+      {
+        command: "cmd.exe",
+        arguments: ["/d", "/s", "/c", "npm.cmd"],
+      },
+    ],
+    ["/tools/yarn/bin/yarn.js", "linux", { command: "npm", arguments: [] }],
+    [null, "darwin", { command: "npm", arguments: [] }],
+  ])(
+    "falls back from non-npm exec path %s on %s",
+    (npmExecPath, platform, expected) => {
+      expect(
+        npmInvocation({
+          commandInterpreter: "cmd.exe",
+          npmExecPath,
+          nodeExecutable: "node",
+          platform,
+        }),
+      ).toEqual(expected);
+    },
+  );
+
   it("relocates portable guide links for the archive root", () => {
     const readme = renderPortableReadme(
       [

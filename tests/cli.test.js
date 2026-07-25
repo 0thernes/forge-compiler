@@ -69,6 +69,7 @@ function invokeForge(args, { input = Buffer.alloc(0), cwd, timeout } = {}) {
         stderr: Buffer.concat(stderr).toString("utf8"),
       });
     });
+    child.stdin.on("error", () => {});
     child.stdin.end(input);
   });
 }
@@ -97,6 +98,7 @@ function invokeForgeWithClosedStdout(args, { input = Buffer.alloc(0) } = {}) {
         stderr: Buffer.concat(stderr).toString("utf8"),
       });
     });
+    child.stdin.on("error", () => {});
     child.stdin.end(input);
   });
 }
@@ -299,6 +301,37 @@ describe("FORGE CLI process contract", () => {
         },
       }),
     ]);
+  });
+
+  it("projects successful JSON traces through the public contract", async () => {
+    const result = await invokeForge(["run", "-", "--json", "--trace"], {
+      input: "let answer = 40 + 2; print(answer);",
+    });
+    const envelope = parseCompactEnvelope(result);
+
+    expect(result.exitCode).toBe(0);
+    expect(envelope.data.result.trace).toMatchObject({
+      schema: "forge.trace/v1",
+      entries: expect.any(Array),
+    });
+    expect(envelope.data.result.trace.entries.length).toBeGreaterThan(0);
+    for (const entry of envelope.data.result.trace.entries) {
+      expect(entry).toMatchObject({
+        index: expect.any(Number),
+        programCounter: expect.any(Number),
+        opcode: expect.any(String),
+        stackBefore: expect.any(Array),
+        stackAfter: expect.any(Array),
+      });
+      expect(entry).not.toHaveProperty("pc");
+      expect(entry).not.toHaveProperty("op");
+      expect(entry).not.toHaveProperty("arg");
+    }
+    expect(
+      envelope.data.result.trace.entries.some((entry) =>
+        Object.hasOwn(entry, "operand"),
+      ),
+    ).toBe(true);
   });
 
   it("keeps usage failures structured and command-aware in pretty JSON", async () => {
@@ -698,7 +731,7 @@ describe("FORGE CLI process contract", () => {
     const result = await invokeForge(
       ["compile", "-", "--emit=tokens,ast,assembly"],
       {
-        input: 'print("\u001b]0;FORGED\u0007");',
+        input: 'print("\u001b]0;FORGED\u0007\u200b\u2060\ufeff");',
       },
     );
 
@@ -709,7 +742,10 @@ describe("FORGE CLI process contract", () => {
     });
     expect(result.stdout).not.toContain("\u001b");
     expect(result.stdout).not.toContain("\u0007");
-    expect(result.stdout).toContain("\\x1b]0;FORGED\\x07");
+    expect(result.stdout).not.toContain("\u200b");
+    expect(result.stdout).not.toContain("\u2060");
+    expect(result.stdout).not.toContain("\ufeff");
+    expect(result.stdout).toContain("\\x1b]0;FORGED\\x07\\u200b\\u2060\\ufeff");
   });
 
   it("rejects invalid UTF-8 and missing inputs with the stable input exit", async () => {
@@ -857,6 +893,18 @@ describe("FORGE CLI process contract", () => {
 
     expect(result).toEqual({
       exitCode: 0,
+      signal: null,
+      stderr: "",
+    });
+
+    const diagnostic = await invokeForgeWithClosedStdout(
+      ["run", "-", "--json"],
+      {
+        input: "print(missing);",
+      },
+    );
+    expect(diagnostic).toEqual({
+      exitCode: 1,
       signal: null,
       stderr: "",
     });

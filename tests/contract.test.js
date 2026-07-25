@@ -5,8 +5,17 @@ import {
   isProtocolOutputLimitError,
   stringifyProtocolValue,
 } from "../src/cli/contract.js";
+import { projectAssembly } from "../src/cli/projections.js";
 
 describe("CLI protocol output budget", () => {
+  it("keeps required unlinked instruction addresses explicit", () => {
+    expect(projectAssembly([{ opcode: "HALT" }], [])).toEqual({
+      schema: "forge.assembly/v1",
+      linked: false,
+      instructions: [{ index: 0, address: null, opcode: "HALT" }],
+    });
+  });
+
   it("keeps deeply nested values stack-safe within the default budget", () => {
     const root = [];
     let cursor = root;
