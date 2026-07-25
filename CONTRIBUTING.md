@@ -37,6 +37,24 @@ Do not silently accept invalid source in unreachable branches. Static errors
 belong in the earliest compiler phase that has enough context to diagnose them.
 Runtime errors should use `ForgeError` codes and must not expose host APIs.
 
+## Public automation contracts
+
+Treat `forge.cli/v1` and each public artifact projection as compatibility
+boundaries. Internal AST or instruction objects must be mapped explicitly;
+never expose a new internal property merely because it happens to serialize.
+A contract change should include:
+
+1. process-level file and stdin tests;
+2. success, diagnostic, resource-limit, and malformed-invocation cases;
+3. stdout/stderr separation and deterministic repeated-output checks;
+4. updates to capability discovery, JSON Schema, architecture, and changelog;
+5. a new schema major when an existing consumer could no longer decode the
+   response.
+
+Machine output must not contain ANSI control sequences, prompts, source text,
+resolved host paths, timestamps, or timings unless the caller explicitly asks
+for a nondeterministic field.
+
 ## Pull requests
 
 Keep changes scoped, explain observable language behavior, and avoid committing

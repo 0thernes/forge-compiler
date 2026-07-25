@@ -3,12 +3,43 @@
 [![CI](https://github.com/0thernes/forge-compiler/actions/workflows/ci.yml/badge.svg)](https://github.com/0thernes/forge-compiler/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-cyan.svg)](LICENSE)
 
-FORGE is a small educational language, compiler pipeline, and deterministic
-stack virtual machine that runs in the browser. The interface exposes each
-stage—tokens, AST, assembly, program output, globals, and an execution trace—so
-the implementation can be explored instead of treated as a black box.
+FORGE is an educational language, explainable compiler pipeline, deterministic
+stack virtual machine, retro browser workbench, and automation-ready CLI. Both
+interfaces expose the real stages—tokens, AST, analysis, assembly, output,
+globals, and bounded execution trace—so the implementation can be inspected
+instead of treated as a black box.
 
 **[Open the live compiler](https://0thernes.github.io/forge-compiler/)**
+
+## What changed in v14.2
+
+Version 14.2 establishes the first stable interface shared by people, scripts,
+CI systems, and coding agents:
+
+- `forge run`, `check`, and `compile` accept a UTF-8 file or standard input;
+- `forge.cli/v1` JSON keeps protocol data on stdout, returns structured
+  diagnostics on failure, and uses documented exit classes;
+- public compiler artifacts use explicit versioned projections instead of
+  leaking mutable implementation objects;
+- cyclic, shared, and deeply nested runtime arrays remain portable through a
+  deterministic flat value graph;
+- `forge capabilities --json` reports only features, limits, artifacts, and
+  interfaces that the current compiler actually ships;
+- a responsive machine-interface deck brings that contract into all four
+  retro workbench eras; and
+- a primary-source [competitive landscape](docs/COMPETITIVE-LANDSCAPE.md) and
+  [architecture roadmap](docs/ROADMAP.md) turn “challenge the best” into
+  measurable correctness, safety, determinism, portability, tooling, and
+  performance gates.
+
+See the complete [CLI and automation contract](docs/CLI.md) for stream
+discipline, artifact schemas, exit classes, deterministic output, and cyclic
+value encoding.
+
+Release assets include a focused, dependency-free
+`forge-compiler-cli-v*.tgz`. Install a downloaded archive globally with
+`npm install --global ./forge-compiler-cli-v14.2.0.tgz`, or add it to a project
+with `npm install ./forge-compiler-cli-v14.2.0.tgz`.
 
 ## What changed in v14.1
 
@@ -46,7 +77,7 @@ maintainable project:
 - immutable trace snapshots and retained final globals;
 - compilation in a Web Worker to keep the interface responsive;
 - versioned local draft persistence and stale-request protection;
-- 340+ automated tests, coverage thresholds, linting, formatting, production
+- 360+ automated tests, coverage thresholds, linting, formatting, production
   builds, dependency updates, and GitHub Pages deployment.
 
 The original v13 import paths remain as compatibility adapters to one canonical
@@ -87,6 +118,22 @@ npm ci
 npm run dev
 ```
 
+Run the same compiler from a terminal or automation harness:
+
+```bash
+node ./bin/forge.mjs run program.forge
+printf 'print(40 + 2);' | node ./bin/forge.mjs check --json
+node ./bin/forge.mjs compile program.forge --emit=ast,assembly --json --pretty
+node ./bin/forge.mjs capabilities --json --pretty
+```
+
+`npm run --silent forge -- …` is the machine-clean package-script equivalent.
+An explicit `run`, `check`, or `compile` command reads stdin when the source
+argument is omitted or `-`. Human run mode reserves stdout for program output.
+JSON mode always emits one `forge.cli/v1` document, including diagnostics on
+failure; timings are excluded unless requested by `--timings`,
+`--emit=timings`, or `--emit=all`.
+
 The production bundle targets ES2022. A supported browser must provide
 JavaScript modules, ES2022 runtime features, structured cloning, and local
 storage. Module Web Workers are used when available; if Worker construction or
@@ -94,20 +141,26 @@ transport fails, compilation falls back to the main thread. CI exercises the
 interface in jsdom rather than a cross-browser end-to-end matrix, so older and
 embedded browsers outside this baseline are best effort.
 
-| Command                   | Purpose                                                     |
-| ------------------------- | ----------------------------------------------------------- |
-| `npm run dev`             | Start the Vite development server                           |
-| `npm test`                | Run the complete Vitest suite once                          |
-| `npm run test:coverage`   | Run tests and enforce core coverage thresholds              |
-| `npm run verify:mutation` | Prove the differential corpus kills four targeted mutants   |
-| `npm run lint`            | Run environment-specific ESLint checks                      |
-| `npm run format:check`    | Check Prettier formatting                                   |
-| `npm run check:docs`      | Validate local Markdown links                               |
-| `npm run verify:metadata` | Check release versions and required changelog agreement     |
-| `npm run build`           | Create the production bundle in `dist/`                     |
-| `npm run check:artifact`  | Validate the existing production bundle                     |
-| `npm run verify:quality`  | Run formatting, lint, docs, metadata, coverage, and mutants |
-| `npm run verify`          | Run the local quality gate, build, and artifact check       |
+| Command                       | Purpose                                                     |
+| ----------------------------- | ----------------------------------------------------------- |
+| `npm run dev`                 | Start the Vite development server                           |
+| `npm run --silent forge -- …` | Run the human or machine-clean JSON compiler CLI            |
+| `npm test`                    | Run the complete Vitest suite once                          |
+| `npm run test:coverage`       | Run tests and enforce core coverage thresholds              |
+| `npm run verify:mutation`     | Prove the differential corpus kills four targeted mutants   |
+| `npm run lint`                | Run environment-specific ESLint checks                      |
+| `npm run format:check`        | Check Prettier formatting                                   |
+| `npm run check:docs`          | Validate local Markdown links                               |
+| `npm run verify:metadata`     | Check release versions and required changelog agreement     |
+| `npm run build`               | Create the production bundle in `dist/`                     |
+| `npm run check:artifact`      | Validate the existing production bundle                     |
+| `npm run verify:quality`      | Run formatting, lint, docs, metadata, coverage, and mutants |
+| `npm run verify`              | Run the local quality gate, build, and artifact check       |
+
+The CLI exit contract is `0` success, `1` source/runtime diagnostic, `2`
+invalid invocation, `3` input failure, `4` resource exhaustion, and `70`
+internal compiler failure. Use `forge capabilities --json` rather than parsing
+help text to discover commands, artifact schemas, and current defaults.
 
 The tree-walk oracle uses a conservative 256-frame operational cap, applied to
 both differential engines, so host recursion cannot mask a FORGE limit result.
@@ -121,8 +174,10 @@ requests exercise portable release packaging and the read-only artifact
 handoff. Version tags additionally verify release metadata and `main` ancestry,
 then a separate minimal-write job creates or updates the draft GitHub Release.
 The static-site archives include a root README with portable hosting
-instructions, alongside a build-dependency CycloneDX SBOM and checksums. The
-publisher refuses to replace assets on an existing published release; when the
+instructions. A separate minimal `.tgz` carries the executable compiler core
+and machine schemas and is smoke-tested after clean extraction. Releases also
+include a build-dependency CycloneDX SBOM and checksums. The publisher refuses
+to replace assets on an existing published release; when the
 repository's release-immutability setting is enabled, publication also locks
 the release and its tag.
 

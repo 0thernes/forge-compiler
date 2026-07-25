@@ -1,6 +1,6 @@
 # FORGE language reference
 
-This document describes the behavior implemented by FORGE v14.1.0.
+This document describes the behavior implemented by FORGE v14.2.0.
 
 ## Lexical rules
 

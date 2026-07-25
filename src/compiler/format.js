@@ -1,13 +1,11 @@
 import { DEFAULT_LIMITS } from "./constants.js";
 
 export function escapeForDisplay(value) {
-  return value
-    .replaceAll("\\", "\\\\")
-    .replaceAll("\0", "\\0")
-    .replaceAll("\n", "\\n")
-    .replaceAll("\t", "\\t")
-    .replaceAll("\r", "\\r")
-    .replaceAll('"', '\\"');
+  return [...value].map(escapeCharacter).join("");
+}
+
+export function escapeTerminalText(value) {
+  return [...String(value)].map(escapeTerminalCharacter).join("");
 }
 
 export function typeName(value) {
@@ -31,6 +29,15 @@ function escapeCharacter(character) {
   switch (character) {
     case "\\":
       return "\\\\";
+    case '"':
+      return '\\"';
+    default:
+      return escapeTerminalCharacter(character);
+  }
+}
+
+function escapeTerminalCharacter(character) {
+  switch (character) {
     case "\0":
       return "\\0";
     case "\n":
@@ -39,10 +46,23 @@ function escapeCharacter(character) {
       return "\\t";
     case "\r":
       return "\\r";
-    case '"':
-      return '\\"';
-    default:
-      return character;
+    default: {
+      const codePoint = character.codePointAt(0);
+      const terminalUnsafe =
+        codePoint <= 0x1f ||
+        (codePoint >= 0x7f && codePoint <= 0x9f) ||
+        codePoint === 0x061c ||
+        codePoint === 0x200e ||
+        codePoint === 0x200f ||
+        codePoint === 0x2028 ||
+        codePoint === 0x2029 ||
+        (codePoint >= 0x202a && codePoint <= 0x202e) ||
+        (codePoint >= 0x2066 && codePoint <= 0x2069);
+      if (!terminalUnsafe) return character;
+      return codePoint <= 0xff
+        ? `\\x${codePoint.toString(16).padStart(2, "0")}`
+        : `\\u${codePoint.toString(16).padStart(4, "0")}`;
+    }
   }
 }
 
