@@ -5,6 +5,7 @@ import { BUILTINS, FORGE_VERSION, KEYWORDS } from "./constants.js";
 import {
   compileSource,
   computeInstructionAddresses,
+  escapeForDisplay,
   execute,
   formatValue,
   lex,
@@ -15,6 +16,7 @@ import {
   TOKEN,
 } from "./index.js";
 import { EXAMPLES } from "./examples.js";
+import { escapeTerminalText } from "./format.js";
 import { runSelfTest } from "./selfTest.js";
 import { SELF_TEST_CASES } from "./selfTestCases.js";
 import { link as compatibilityLink } from "./linker.js";
@@ -613,6 +615,13 @@ let text = "" + value;`,
 });
 
 describe("lexer and formatter hardening", () => {
+  it("normalizes display values and escapes invisible terminal controls", () => {
+    expect(escapeForDisplay(42)).toBe("42");
+    expect(escapeTerminalText("\u200b\u200c\u200d\u2060\ufeff")).toBe(
+      "\\u200b\\u200c\\u200d\\u2060\\ufeff",
+    );
+  });
+
   it("tracks multiline string positions without an off-by-one error", () => {
     expect(() => lex(`"a\nb"@`)).toThrow("line 2:3");
   });

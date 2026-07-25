@@ -52,8 +52,10 @@ function escapeHumanText(value) {
 }
 
 function encodedSourceByteLimit(maxSourceLength) {
-  // A UTF-8 scalar uses at most four bytes. The extra three bytes admit an
-  // optional UTF-8 BOM while the decoded compiler limit remains authoritative.
+  // This deliberately generous pre-decode ceiling uses four bytes per UTF-16
+  // code unit. It bounds allocation before decoding without rejecting valid
+  // input; the decoded compiler length remains authoritative. The extra three
+  // bytes admit an optional UTF-8 BOM.
   return Math.min(Number.MAX_SAFE_INTEGER, maxSourceLength * 4 + 3);
 }
 

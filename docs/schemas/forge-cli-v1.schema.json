@@ -1331,6 +1331,7 @@
     },
     "capabilityManifest": {
       "type": "object",
+      "description": "Top-level capability categories are closed; named subsections intentionally permit additive fields for forward capability negotiation.",
       "required": [
         "schema",
         "identity",

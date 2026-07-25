@@ -1,7 +1,7 @@
 import { DEFAULT_LIMITS } from "./constants.js";
 
 export function escapeForDisplay(value) {
-  return [...value].map(escapeCharacter).join("");
+  return [...String(value)].map(escapeCharacter).join("");
 }
 
 export function escapeTerminalText(value) {
@@ -52,12 +52,15 @@ function escapeTerminalCharacter(character) {
         codePoint <= 0x1f ||
         (codePoint >= 0x7f && codePoint <= 0x9f) ||
         codePoint === 0x061c ||
+        (codePoint >= 0x200b && codePoint <= 0x200d) ||
         codePoint === 0x200e ||
         codePoint === 0x200f ||
         codePoint === 0x2028 ||
         codePoint === 0x2029 ||
         (codePoint >= 0x202a && codePoint <= 0x202e) ||
-        (codePoint >= 0x2066 && codePoint <= 0x2069);
+        codePoint === 0x2060 ||
+        (codePoint >= 0x2066 && codePoint <= 0x2069) ||
+        codePoint === 0xfeff;
       if (!terminalUnsafe) return character;
       return codePoint <= 0xff
         ? `\\x${codePoint.toString(16).padStart(2, "0")}`

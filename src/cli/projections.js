@@ -209,7 +209,11 @@ export function projectAssembly(
     schema: PUBLIC_SCHEMA_VERSIONS.assembly,
     linked,
     instructions: instructions.map((instruction, index) =>
-      projectInstruction(instruction, index, linked ? index : addresses[index]),
+      projectInstruction(
+        instruction,
+        index,
+        linked ? index : (addresses[index] ?? null),
+      ),
     ),
   };
 }

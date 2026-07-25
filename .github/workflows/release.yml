@@ -107,8 +107,14 @@ jobs:
           packed_name="$(node scripts/pack-cli.mjs --pack-destination .)"
           mv "${packed_name}" "${cli_archive}"
           tar -tzf "${cli_archive}" "package/bin/forge.mjs" >/dev/null
-          tar -tvzf "${cli_archive}" "package/bin/forge.mjs" |
-            grep -Eq '^-rwxr-xr-x '
+          cli_bin_listing="$(tar -tvzf "${cli_archive}" "package/bin/forge.mjs")"
+          case "${cli_bin_listing}" in
+            -rwxr-xr-x*) ;;
+            *)
+              echo "::error::Unexpected mode for package/bin/forge.mjs: ${cli_bin_listing}"
+              exit 1
+              ;;
+          esac
           cli_smoke_root="$(mktemp -d)"
           tar -xzf "${cli_archive}" -C "${cli_smoke_root}"
           node scripts/verify-docs.mjs "${cli_smoke_root}/package"

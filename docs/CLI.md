@@ -20,7 +20,8 @@ recorded in `package.json`.
 
 An explicit `run`, `check`, or `compile` command reads standard input when its
 source argument is absent or `-`. Passing a source path without a command is a
-convenience alias for `run`.
+convenience alias for `run`. The `-h`/`--help` and `-V`/`--version` meta flags
+take precedence over an explicit command and any source positionals.
 
 ## Commands
 
@@ -124,6 +125,10 @@ conversion; both encodings are named rather than implied.
 
 The normative envelope shape is
 [`docs/schemas/forge-cli-v1.schema.json`](schemas/forge-cli-v1.schema.json).
+The capability manifest closes its top-level categories while intentionally
+allowing additive fields inside named subsections for forward capability
+negotiation. Consumers must ignore unknown subsection properties and continue
+to validate the documented properties they use.
 Artifact records identify their own schema:
 
 | Projection             | Schema                           |
