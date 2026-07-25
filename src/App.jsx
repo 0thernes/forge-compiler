@@ -8,6 +8,7 @@ import {
 import { renderAst } from "./compiler/ast.js";
 import { EXAMPLES } from "./compiler/examples.js";
 import { formatForPrint, formatValue } from "./compiler/format.js";
+import { CapabilityDeck } from "./components/CapabilityDeck.jsx";
 import { EraDial, ERA_PROFILES } from "./components/EraDial.jsx";
 import { InspectorPager } from "./components/InspectorPager.jsx";
 import { useCompilerWorker } from "./useCompilerWorker.js";
@@ -694,6 +695,8 @@ export default function ForgeCompiler() {
           </button>
         </div>
       </section>
+
+      <CapabilityDeck />
 
       <section
         className="pipeline-strip"

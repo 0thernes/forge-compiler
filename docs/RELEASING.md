@@ -39,8 +39,9 @@ git push origin "$TAG"
 
 The **Release** workflow rejects a version mismatch or a tag commit that is not
 on `main`. It reruns the quality gate, builds a relative-path portable bundle,
-and attaches `.tar.gz` and `.zip` archives, a build-dependency CycloneDX SBOM,
-and SHA-256 checksums to a draft GitHub Release.
+and attaches `.tar.gz` and `.zip` static-site archives, a minimal
+`forge-compiler-cli-v*.tgz` Node package, a build-dependency CycloneDX SBOM, and
+SHA-256 checksums to a draft GitHub Release.
 
 The archives contain a prebuilt static browser application, not a source
 checkout: they intentionally omit `src/`, `package.json`, tests, and the npm
@@ -49,6 +50,13 @@ toolchain. Packaging must install
 include the MIT license plus its linked project documentation. Validate the
 archive as a static site; do not test its instructions as though it were an npm
 project.
+
+The separate CLI package is built from a staged CLI-only manifest. It contains
+the executable, compiler core, automation schemas, and focused documentation
+without React, runtime dependencies, UI components, tests, development
+scripts, or repository-only engine constraints. Packaging validates its
+documentation, installs it into a clean prefix, and runs a real JSON-mode
+program through the installed `forge` shim before checksums are recorded.
 
 ## Inspect and publish
 

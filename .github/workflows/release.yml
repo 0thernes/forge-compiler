@@ -40,7 +40,9 @@ jobs:
 
       - name: Verify checkout matches release tag
         if: ${{ github.event_name != 'pull_request' }}
-        run: test "$(git rev-parse HEAD)" = "$(git rev-parse "refs/tags/$RELEASE_TAG^{commit}")"
+        run: |
+          test "$(git cat-file -t "refs/tags/$RELEASE_TAG")" = tag
+          test "$(git rev-parse HEAD)" = "$(git rev-parse "refs/tags/$RELEASE_TAG^{commit}")"
 
       - name: Setup Node
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
@@ -87,6 +89,7 @@ jobs:
           version="$(node -p "require('./package.json').version")"
           archive="forge-compiler-v${version}.tar.gz"
           zipfile="forge-compiler-v${version}.zip"
+          cli_archive="forge-compiler-cli-v${version}.tgz"
           sbom="forge-compiler-v${version}.cdx.json"
           install -m 0644 CHANGELOG.md CONTRIBUTING.md LICENSE SECURITY.md dist/
           cp -R docs dist/docs
@@ -101,8 +104,28 @@ jobs:
           unzip -tqq "${zipfile}" "LICENSE"
           unzip -tqq "${zipfile}" "README.md"
           unzip -tqq "${zipfile}" "docs/RELEASING.md"
+          packed_name="$(node scripts/pack-cli.mjs --pack-destination .)"
+          mv "${packed_name}" "${cli_archive}"
+          tar -tzf "${cli_archive}" "package/bin/forge.mjs" >/dev/null
+          tar -tvzf "${cli_archive}" "package/bin/forge.mjs" |
+            grep -Eq '^-rwxr-xr-x '
+          cli_smoke_root="$(mktemp -d)"
+          tar -xzf "${cli_archive}" -C "${cli_smoke_root}"
+          node scripts/verify-docs.mjs "${cli_smoke_root}/package"
+          npm install \
+            --prefix "${cli_smoke_root}/install" \
+            --ignore-scripts \
+            --no-audit \
+            --no-fund \
+            --offline \
+            --package-lock=false \
+            "./${cli_archive}" >/dev/null
+          printf 'print(40 + 2);' |
+            "${cli_smoke_root}/install/node_modules/.bin/forge" run --json > cli-smoke.json
+          node -e "const r = require('fs').readFileSync('cli-smoke.json', 'utf8'); const j = JSON.parse(r); if (!j.ok || j.data.result.output[0] !== '42') process.exit(1)"
+          rm -rf "${cli_smoke_root}" cli-smoke.json
           npm sbom --sbom-format=cyclonedx > "${sbom}"
-          sha256sum "${archive}" "${zipfile}" "${sbom}" > SHA256SUMS
+          sha256sum "${archive}" "${zipfile}" "${cli_archive}" "${sbom}" > SHA256SUMS
           echo "version=${version}" >> "$GITHUB_OUTPUT"
 
       - name: Upload verified release assets
@@ -112,6 +135,7 @@ jobs:
           path: |
             forge-compiler-v${{ steps.package.outputs.version }}.tar.gz
             forge-compiler-v${{ steps.package.outputs.version }}.zip
+            forge-compiler-cli-v${{ steps.package.outputs.version }}.tgz
             forge-compiler-v${{ steps.package.outputs.version }}.cdx.json
             SHA256SUMS
           if-no-files-found: error
@@ -164,6 +188,7 @@ jobs:
           assets=(
             "forge-compiler-v${VERSION}.tar.gz"
             "forge-compiler-v${VERSION}.zip"
+            "forge-compiler-cli-v${VERSION}.tgz"
             "forge-compiler-v${VERSION}.cdx.json"
             "SHA256SUMS"
           )

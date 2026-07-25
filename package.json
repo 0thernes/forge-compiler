@@ -1,8 +1,8 @@
 {
   "name": "forge-compiler",
-  "version": "14.1.0",
+  "version": "14.2.0",
   "private": true,
-  "description": "A browser-based educational compiler and deterministic stack virtual machine for the FORGE language.",
+  "description": "An explainable FORGE language compiler, deterministic stack VM, retro browser workbench, and agent-grade CLI.",
   "license": "MIT",
   "homepage": "https://0thernes.github.io/forge-compiler/",
   "repository": {
@@ -12,22 +12,28 @@
   "bugs": {
     "url": "https://github.com/0thernes/forge-compiler/issues"
   },
+  "bin": {
+    "forge": "./bin/forge.mjs"
+  },
   "type": "module",
   "scripts": {
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
+    "forge": "node ./bin/forge.mjs",
     "lint": "eslint . --max-warnings=0",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "check:docs": "node scripts/verify-docs.mjs",
+    "check:package": "node scripts/verify-cli-package.mjs",
+    "pack:cli": "node scripts/pack-cli.mjs --pack-destination .",
     "check:artifact": "node scripts/verify-artifact.mjs dist",
     "verify:metadata": "node scripts/verify-release.mjs --metadata-only",
     "test": "vitest run",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
     "verify:mutation": "node scripts/verify-mutation-sensitivity.mjs",
-    "verify:quality": "npm run format:check && npm run lint && npm run check:docs && npm run verify:metadata && npm run test:coverage && npm run verify:mutation",
+    "verify:quality": "npm run format:check && npm run lint && npm run check:docs && npm run verify:metadata && npm run check:package && npm run test:coverage && npm run verify:mutation",
     "verify": "npm run verify:quality && npm run build && npm run check:artifact"
   },
   "engines": {
@@ -57,6 +63,7 @@
     "@testing-library/react": "16.3.2",
     "@vitejs/plugin-react": "6.0.4",
     "@vitest/coverage-v8": "4.1.10",
+    "ajv": "8.20.0",
     "eslint": "10.7.0",
     "eslint-plugin-react-hooks": "7.1.1",
     "eslint-plugin-react-refresh": "0.5.3",

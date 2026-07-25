@@ -105,6 +105,20 @@ describe("ForgeCompiler interface", () => {
     ).toHaveAttribute("href", "#forge-source");
   });
 
+  it("discovers the shipped machine contract from the interface deck", () => {
+    render(<ForgeCompiler />);
+    const summary = screen.getByText("Interface deck").closest("summary");
+    const deck = summary.closest("details");
+
+    expect(deck).not.toHaveAttribute("open");
+    fireEvent.click(summary);
+
+    expect(deck).toHaveAttribute("open");
+    expect(within(deck).getAllByText("forge.cli/v1")).toHaveLength(2);
+    expect(within(deck).getByText(/resource 4/)).toBeInTheDocument();
+    expect(within(deck).getByText(/public schemas/)).toBeInTheDocument();
+  });
+
   it("runs source through the complete pipeline", async () => {
     render(<ForgeCompiler />);
     fireEvent.click(screen.getByRole("button", { name: /run program/i }));

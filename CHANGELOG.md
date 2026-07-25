@@ -4,6 +4,47 @@ All notable changes to FORGE are documented here.
 
 ## Unreleased
 
+## [14.2.0] - 2026-07-24
+
+### Added
+
+- A zero-dependency Node.js CLI for UTF-8 files or standard input with `run`,
+  `check`, `compile`, `capabilities`, `version`, and `help` commands.
+- A staged CLI-only release manifest plus clean-install executable and
+  documentation verification, keeping React and repository tooling out of the
+  distributable package.
+- The versioned `forge.cli/v1` JSON automation contract, explicit exit-code
+  classes, deterministic source digests, truthful capability discovery, and
+  stable public token, AST, analysis, assembly, result, trace, and timing
+  projections.
+- A flat `forge.values/v1` runtime graph for mutable FORGE arrays, preserving
+  cycles, aliases, hostile property names, and deeply nested values without
+  recursive JSON.
+- A responsive machine-interface deck that exposes shipped browser, CLI,
+  protocol, artifact, verification, and resource-bound capabilities inside
+  each retro console era.
+- A primary-source comparison of more than 25 peer languages and toolchains,
+  plus a staged, measurable architecture roadmap for types, effects,
+  capabilities, concurrency, verified bytecode, WebAssembly, packages, and
+  future native backends.
+
+### Changed
+
+- Package metadata now exposes the `forge` executable and describes FORGE as
+  both an explainable browser workbench and an automation-ready compiler.
+- Machine output omits volatile timings unless requested, keeps protocol data
+  isolated on standard output, and classifies source diagnostics, caller
+  misuse, input failures, resource exhaustion, and compiler defects
+  separately.
+- Pre-decode input and encoded protocol output are independently bounded;
+  limit overrides are tightening-only, and human operational text escapes
+  terminal and bidirectional controls.
+- Compiler capability declarations are generated from the same version and
+  limit constants used by execution instead of duplicating UI claims.
+- Release packaging now produces and smoke-tests a focused CLI `.tgz` alongside
+  the portable static-site archives, and includes it in the checksum handoff
+  between packaging and publication jobs.
+
 ## [14.1.0] - 2026-07-24
 
 ### Added
@@ -160,5 +201,6 @@ example suite and browser-only self-test. Version 14 preserves that observable
 language behavior while replacing the monolithic delivery model.
 
 [14.1.0]: https://github.com/0thernes/forge-compiler/compare/v14.0.1...v14.1.0
+[14.2.0]: https://github.com/0thernes/forge-compiler/compare/v14.1.0...v14.2.0
 [14.0.1]: https://github.com/0thernes/forge-compiler/compare/v14.0.0...v14.0.1
 [14.0.0]: https://github.com/0thernes/forge-compiler/releases/tag/v14.0.0

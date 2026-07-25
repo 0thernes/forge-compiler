@@ -1,6 +1,6 @@
 import { ForgeError } from "./errors.js";
 
-export const FORGE_VERSION = "14.1.0";
+export const FORGE_VERSION = "14.2.0";
 
 export const TOKEN = Object.freeze({
   NUMBER: "NUMBER",

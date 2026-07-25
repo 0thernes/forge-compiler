@@ -39,7 +39,9 @@ export default defineConfig([
   {
     files: [
       "*.config.js",
+      "bin/**/*.{js,mjs,cjs}",
       "scripts/**/*.{js,mjs,cjs}",
+      "src/cli/**/*.{js,mjs,cjs}",
       "tests/**/*.{js,jsx}",
       "src/**/*.test.{js,jsx}",
       "src/test/**/*.{js,jsx}",

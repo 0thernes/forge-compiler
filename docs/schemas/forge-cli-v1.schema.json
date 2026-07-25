@@ -1,0 +1,1392 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/0thernes/forge-compiler/main/docs/schemas/forge-cli-v1.schema.json",
+  "title": "FORGE CLI v1 envelope",
+  "description": "The complete machine-readable envelope written by FORGE CLI commands using --json.",
+  "type": "object",
+  "required": [
+    "schema",
+    "ok",
+    "command",
+    "version",
+    "exitCode",
+    "source",
+    "diagnostics",
+    "data"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "schema": {
+      "const": "forge.cli/v1"
+    },
+    "ok": {
+      "type": "boolean"
+    },
+    "command": {
+      "enum": [
+        "run",
+        "check",
+        "compile",
+        "capabilities",
+        "version",
+        "help",
+        "unknown"
+      ]
+    },
+    "version": {
+      "type": "string",
+      "minLength": 1
+    },
+    "exitCode": {
+      "enum": [0, 1, 2, 3, 4, 70]
+    },
+    "source": {
+      "oneOf": [
+        {
+          "type": "null"
+        },
+        {
+          "$ref": "#/$defs/sourceMetadata"
+        }
+      ]
+    },
+    "diagnostics": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/diagnostic"
+      }
+    },
+    "data": {
+      "$ref": "#/$defs/protocolValue"
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "ok": {
+            "const": true
+          }
+        },
+        "required": ["ok"]
+      },
+      "then": {
+        "properties": {
+          "exitCode": {
+            "const": 0
+          },
+          "diagnostics": {
+            "type": "array",
+            "maxItems": 0
+          }
+        }
+      },
+      "else": {
+        "properties": {
+          "exitCode": {
+            "enum": [1, 2, 3, 4, 70]
+          },
+          "diagnostics": {
+            "type": "array",
+            "minItems": 1
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "ok": {
+            "const": true
+          },
+          "command": {
+            "const": "run"
+          }
+        },
+        "required": ["ok", "command"]
+      },
+      "then": {
+        "properties": {
+          "source": {
+            "$ref": "#/$defs/sourceMetadata"
+          },
+          "data": {
+            "$ref": "#/$defs/runData"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "ok": {
+            "const": true
+          },
+          "command": {
+            "const": "check"
+          }
+        },
+        "required": ["ok", "command"]
+      },
+      "then": {
+        "properties": {
+          "source": {
+            "$ref": "#/$defs/sourceMetadata"
+          },
+          "data": {
+            "$ref": "#/$defs/checkData"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "ok": {
+            "const": true
+          },
+          "command": {
+            "const": "compile"
+          }
+        },
+        "required": ["ok", "command"]
+      },
+      "then": {
+        "properties": {
+          "source": {
+            "$ref": "#/$defs/sourceMetadata"
+          },
+          "data": {
+            "$ref": "#/$defs/compileData"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "ok": {
+            "const": true
+          },
+          "command": {
+            "const": "capabilities"
+          }
+        },
+        "required": ["ok", "command"]
+      },
+      "then": {
+        "properties": {
+          "source": {
+            "type": "null"
+          },
+          "data": {
+            "$ref": "#/$defs/capabilitiesData"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "ok": {
+            "const": true
+          },
+          "command": {
+            "const": "version"
+          }
+        },
+        "required": ["ok", "command"]
+      },
+      "then": {
+        "properties": {
+          "source": {
+            "type": "null"
+          },
+          "data": {
+            "$ref": "#/$defs/versionData"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "ok": {
+            "const": true
+          },
+          "command": {
+            "const": "help"
+          }
+        },
+        "required": ["ok", "command"]
+      },
+      "then": {
+        "properties": {
+          "source": {
+            "type": "null"
+          },
+          "data": {
+            "$ref": "#/$defs/helpData"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "ok": {
+            "const": false
+          },
+          "command": {
+            "const": "run"
+          }
+        },
+        "required": ["ok", "command"]
+      },
+      "then": {
+        "properties": {
+          "data": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/$defs/runData"
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "ok": {
+            "const": false
+          },
+          "command": {
+            "enum": [
+              "check",
+              "compile",
+              "capabilities",
+              "version",
+              "help",
+              "unknown"
+            ]
+          }
+        },
+        "required": ["ok", "command"]
+      },
+      "then": {
+        "properties": {
+          "data": {
+            "type": "null"
+          }
+        }
+      }
+    }
+  ],
+  "$defs": {
+    "nonNegativeInteger": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "positiveInteger": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "nullableNonNegativeInteger": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/nonNegativeInteger"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "position": {
+      "type": "object",
+      "required": ["line", "column"],
+      "additionalProperties": false,
+      "properties": {
+        "line": {
+          "$ref": "#/$defs/positiveInteger"
+        },
+        "column": {
+          "$ref": "#/$defs/positiveInteger"
+        }
+      }
+    },
+    "sourceMetadata": {
+      "type": "object",
+      "required": [
+        "kind",
+        "displayName",
+        "sha256",
+        "bytes",
+        "characters",
+        "characterEncoding",
+        "lines"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "enum": ["stdin", "file"]
+        },
+        "displayName": {
+          "type": "string",
+          "minLength": 1
+        },
+        "sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "bytes": {
+          "$ref": "#/$defs/nonNegativeInteger"
+        },
+        "characters": {
+          "$ref": "#/$defs/nonNegativeInteger"
+        },
+        "characterEncoding": {
+          "const": "utf-16-code-unit"
+        },
+        "lines": {
+          "$ref": "#/$defs/positiveInteger"
+        }
+      }
+    },
+    "diagnosticLocation": {
+      "type": "object",
+      "required": ["source", "line", "column"],
+      "additionalProperties": false,
+      "properties": {
+        "source": {
+          "type": "string",
+          "minLength": 1
+        },
+        "line": {
+          "$ref": "#/$defs/positiveInteger"
+        },
+        "column": {
+          "$ref": "#/$defs/positiveInteger"
+        }
+      }
+    },
+    "diagnostic": {
+      "type": "object",
+      "required": [
+        "schema",
+        "severity",
+        "phase",
+        "code",
+        "message",
+        "location"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "schema": {
+          "const": "forge.diagnostic/v1"
+        },
+        "severity": {
+          "type": "string",
+          "minLength": 1
+        },
+        "phase": {
+          "type": "string",
+          "minLength": 1
+        },
+        "code": {
+          "type": "string",
+          "minLength": 1
+        },
+        "message": {
+          "type": "string"
+        },
+        "location": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "#/$defs/diagnosticLocation"
+            }
+          ]
+        }
+      }
+    },
+    "referenceMarker": {
+      "type": "object",
+      "required": ["$forge", "path"],
+      "additionalProperties": false,
+      "properties": {
+        "$forge": {
+          "const": "reference"
+        },
+        "path": {
+          "type": "string",
+          "pattern": "^#(?:/(?:[^~/]|~[01])*)*$"
+        }
+      }
+    },
+    "encodedScalarMarker": {
+      "type": "object",
+      "required": ["$forge", "value"],
+      "additionalProperties": false,
+      "properties": {
+        "$forge": {
+          "enum": ["number", "undefined", "bigint", "symbol", "function"]
+        },
+        "value": {
+          "type": "string"
+        }
+      }
+    },
+    "arrayReferenceMarker": {
+      "type": "object",
+      "required": ["$forge", "id"],
+      "additionalProperties": false,
+      "properties": {
+        "$forge": {
+          "const": "array-reference"
+        },
+        "id": {
+          "$ref": "#/$defs/nonNegativeInteger"
+        }
+      }
+    },
+    "runtimeValue": {
+      "anyOf": [
+        {
+          "type": ["null", "boolean", "number", "string"]
+        },
+        {
+          "$ref": "#/$defs/encodedScalarMarker"
+        },
+        {
+          "$ref": "#/$defs/arrayReferenceMarker"
+        }
+      ]
+    },
+    "valueArrayNode": {
+      "type": "object",
+      "required": ["id", "items"],
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/nonNegativeInteger"
+        },
+        "items": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/runtimeValue"
+          }
+        }
+      }
+    },
+    "values": {
+      "type": "object",
+      "required": ["schema", "roots", "arrays"],
+      "additionalProperties": false,
+      "properties": {
+        "schema": {
+          "const": "forge.values/v1"
+        },
+        "roots": {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/$defs/runtimeValue"
+          }
+        },
+        "arrays": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/valueArrayNode"
+          }
+        }
+      }
+    },
+    "protocolObject": {
+      "type": "object",
+      "not": {
+        "required": ["$forge"]
+      },
+      "additionalProperties": {
+        "$ref": "#/$defs/protocolValue"
+      }
+    },
+    "protocolValue": {
+      "anyOf": [
+        {
+          "type": ["null", "boolean", "number", "string"]
+        },
+        {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/protocolValue"
+          }
+        },
+        {
+          "$ref": "#/$defs/protocolObject"
+        },
+        {
+          "$ref": "#/$defs/referenceMarker"
+        },
+        {
+          "$ref": "#/$defs/arrayReferenceMarker"
+        },
+        {
+          "$ref": "#/$defs/encodedScalarMarker"
+        }
+      ]
+    },
+    "summary": {
+      "type": "object",
+      "required": [
+        "tokens",
+        "topLevelStatements",
+        "variables",
+        "functions",
+        "calls",
+        "assemblyRows",
+        "instructions",
+        "labels",
+        "executed"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "tokens": {
+          "$ref": "#/$defs/nonNegativeInteger"
+        },
+        "topLevelStatements": {
+          "$ref": "#/$defs/nonNegativeInteger"
+        },
+        "variables": {
+          "$ref": "#/$defs/nonNegativeInteger"
+        },
+        "functions": {
+          "$ref": "#/$defs/nonNegativeInteger"
+        },
+        "calls": {
+          "$ref": "#/$defs/nonNegativeInteger"
+        },
+        "assemblyRows": {
+          "$ref": "#/$defs/nonNegativeInteger"
+        },
+        "instructions": {
+          "$ref": "#/$defs/nonNegativeInteger"
+        },
+        "labels": {
+          "$ref": "#/$defs/nonNegativeInteger"
+        },
+        "executed": {
+          "type": "boolean"
+        },
+        "status": {
+          "enum": ["halted", "step_limit"]
+        },
+        "steps": {
+          "$ref": "#/$defs/nonNegativeInteger"
+        },
+        "outputRecords": {
+          "$ref": "#/$defs/nonNegativeInteger"
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "executed": {
+                "const": true
+              }
+            },
+            "required": ["executed"]
+          },
+          "then": {
+            "required": ["status", "steps", "outputRecords"]
+          },
+          "else": {
+            "not": {
+              "anyOf": [
+                {
+                  "required": ["status"]
+                },
+                {
+                  "required": ["steps"]
+                },
+                {
+                  "required": ["outputRecords"]
+                }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    "analysis": {
+      "type": "object",
+      "required": ["schema", "variables", "functions", "calls"],
+      "additionalProperties": false,
+      "properties": {
+        "schema": {
+          "const": "forge.analysis/v1"
+        },
+        "variables": {
+          "$ref": "#/$defs/nonNegativeInteger"
+        },
+        "functions": {
+          "$ref": "#/$defs/nonNegativeInteger"
+        },
+        "calls": {
+          "$ref": "#/$defs/nonNegativeInteger"
+        }
+      }
+    },
+    "token": {
+      "type": "object",
+      "required": ["index", "kind", "value", "position"],
+      "additionalProperties": false,
+      "properties": {
+        "index": {
+          "$ref": "#/$defs/nonNegativeInteger"
+        },
+        "kind": {
+          "type": "string",
+          "minLength": 1
+        },
+        "value": {
+          "$ref": "#/$defs/protocolValue"
+        },
+        "position": {
+          "$ref": "#/$defs/position"
+        }
+      }
+    },
+    "tokens": {
+      "type": "object",
+      "required": ["schema", "items"],
+      "additionalProperties": false,
+      "properties": {
+        "schema": {
+          "const": "forge.tokens/v1"
+        },
+        "items": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/token"
+          }
+        }
+      }
+    },
+    "ast": {
+      "type": "object",
+      "required": ["schema", "root"],
+      "additionalProperties": false,
+      "properties": {
+        "schema": {
+          "const": "forge.ast/v1"
+        },
+        "root": {
+          "$ref": "#/$defs/protocolObject"
+        }
+      }
+    },
+    "instruction": {
+      "type": "object",
+      "required": ["index", "address", "opcode"],
+      "additionalProperties": false,
+      "properties": {
+        "index": {
+          "$ref": "#/$defs/nonNegativeInteger"
+        },
+        "address": {
+          "$ref": "#/$defs/nullableNonNegativeInteger"
+        },
+        "opcode": {
+          "type": "string",
+          "minLength": 1
+        },
+        "operand": {
+          "$ref": "#/$defs/protocolValue"
+        },
+        "target": {
+          "$ref": "#/$defs/nonNegativeInteger"
+        }
+      }
+    },
+    "assembly": {
+      "type": "object",
+      "required": ["schema", "linked", "instructions"],
+      "additionalProperties": false,
+      "properties": {
+        "schema": {
+          "const": "forge.assembly/v1"
+        },
+        "linked": {
+          "type": "boolean"
+        },
+        "instructions": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/instruction"
+          }
+        }
+      }
+    },
+    "instructionAddresses": {
+      "type": "object",
+      "required": ["schema", "items"],
+      "additionalProperties": false,
+      "properties": {
+        "schema": {
+          "const": "forge.instruction-addresses/v1"
+        },
+        "items": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/nullableNonNegativeInteger"
+          }
+        }
+      }
+    },
+    "timings": {
+      "type": "object",
+      "required": ["schema", "unit", "phases"],
+      "additionalProperties": false,
+      "properties": {
+        "schema": {
+          "const": "forge.timings/v1"
+        },
+        "unit": {
+          "const": "milliseconds"
+        },
+        "phases": {
+          "type": "object",
+          "required": [
+            "lex",
+            "parse",
+            "analyze",
+            "codegen",
+            "link",
+            "execute",
+            "total"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "lex": {
+              "type": "number",
+              "minimum": 0
+            },
+            "parse": {
+              "type": "number",
+              "minimum": 0
+            },
+            "analyze": {
+              "type": "number",
+              "minimum": 0
+            },
+            "codegen": {
+              "type": "number",
+              "minimum": 0
+            },
+            "link": {
+              "type": "number",
+              "minimum": 0
+            },
+            "execute": {
+              "type": "number",
+              "minimum": 0
+            },
+            "total": {
+              "type": "number",
+              "minimum": 0
+            }
+          }
+        }
+      }
+    },
+    "traceEntry": {
+      "type": "object",
+      "required": [
+        "index",
+        "programCounter",
+        "opcode",
+        "stackBefore",
+        "stackAfter"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "index": {
+          "$ref": "#/$defs/nonNegativeInteger"
+        },
+        "programCounter": {
+          "$ref": "#/$defs/nonNegativeInteger"
+        },
+        "opcode": {
+          "type": "string",
+          "minLength": 1
+        },
+        "operand": {
+          "$ref": "#/$defs/protocolValue"
+        },
+        "stackBefore": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/protocolValue"
+          }
+        },
+        "stackAfter": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/protocolValue"
+          }
+        }
+      }
+    },
+    "trace": {
+      "type": "object",
+      "required": ["schema", "entries"],
+      "additionalProperties": false,
+      "properties": {
+        "schema": {
+          "const": "forge.trace/v1"
+        },
+        "entries": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/traceEntry"
+          }
+        }
+      }
+    },
+    "result": {
+      "type": "object",
+      "required": [
+        "schema",
+        "status",
+        "output",
+        "globals",
+        "steps",
+        "traceOverflow",
+        "traceCharacters",
+        "outputTruncated",
+        "outputTruncationReason",
+        "stackDepth",
+        "callDepth"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "schema": {
+          "const": "forge.result/v1"
+        },
+        "status": {
+          "enum": ["halted", "step_limit"]
+        },
+        "output": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "globals": {
+          "$ref": "#/$defs/values"
+        },
+        "steps": {
+          "$ref": "#/$defs/nonNegativeInteger"
+        },
+        "traceOverflow": {
+          "type": "boolean"
+        },
+        "traceCharacters": {
+          "$ref": "#/$defs/nonNegativeInteger"
+        },
+        "outputTruncated": {
+          "type": "boolean"
+        },
+        "outputTruncationReason": {
+          "type": ["null", "string"]
+        },
+        "stackDepth": {
+          "$ref": "#/$defs/nonNegativeInteger"
+        },
+        "callDepth": {
+          "$ref": "#/$defs/nonNegativeInteger"
+        },
+        "trace": {
+          "$ref": "#/$defs/trace"
+        }
+      }
+    },
+    "runData": {
+      "type": "object",
+      "required": ["summary", "result"],
+      "additionalProperties": false,
+      "properties": {
+        "summary": {
+          "$ref": "#/$defs/summary"
+        },
+        "result": {
+          "$ref": "#/$defs/result"
+        },
+        "timings": {
+          "$ref": "#/$defs/timings"
+        }
+      }
+    },
+    "checkData": {
+      "type": "object",
+      "required": ["summary", "analysis"],
+      "additionalProperties": false,
+      "properties": {
+        "summary": {
+          "$ref": "#/$defs/summary"
+        },
+        "analysis": {
+          "$ref": "#/$defs/analysis"
+        },
+        "timings": {
+          "$ref": "#/$defs/timings"
+        }
+      }
+    },
+    "compileArtifacts": {
+      "type": "object",
+      "minProperties": 1,
+      "additionalProperties": false,
+      "properties": {
+        "tokens": {
+          "$ref": "#/$defs/tokens"
+        },
+        "ast": {
+          "$ref": "#/$defs/ast"
+        },
+        "analysis": {
+          "$ref": "#/$defs/analysis"
+        },
+        "assembly": {
+          "$ref": "#/$defs/assembly"
+        },
+        "linkedCode": {
+          "$ref": "#/$defs/assembly"
+        },
+        "instructionAddresses": {
+          "$ref": "#/$defs/instructionAddresses"
+        },
+        "timings": {
+          "$ref": "#/$defs/timings"
+        }
+      }
+    },
+    "compileData": {
+      "type": "object",
+      "required": ["summary", "artifacts"],
+      "additionalProperties": false,
+      "properties": {
+        "summary": {
+          "$ref": "#/$defs/summary"
+        },
+        "artifacts": {
+          "$ref": "#/$defs/compileArtifacts"
+        }
+      }
+    },
+    "helpData": {
+      "type": "object",
+      "required": ["help", "protocol"],
+      "additionalProperties": false,
+      "properties": {
+        "help": {
+          "type": "string"
+        },
+        "protocol": {
+          "const": "forge.cli/v1"
+        }
+      }
+    },
+    "versionData": {
+      "type": "object",
+      "required": ["version"],
+      "additionalProperties": false,
+      "properties": {
+        "version": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "capabilitiesData": {
+      "type": "object",
+      "required": ["capabilities"],
+      "additionalProperties": false,
+      "properties": {
+        "capabilities": {
+          "$ref": "#/$defs/capabilityManifest"
+        }
+      }
+    },
+    "capabilityIdentity": {
+      "type": "object",
+      "required": ["language", "compiler", "version", "sourceExtensions"],
+      "properties": {
+        "language": {
+          "const": "FORGE"
+        },
+        "compiler": {
+          "const": "forge-compiler"
+        },
+        "version": {
+          "type": "string",
+          "minLength": 1
+        },
+        "sourceExtensions": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "capabilityFunctions": {
+      "type": "object",
+      "required": ["lexicalClosures", "fixedArity", "firstClassValues"],
+      "properties": {
+        "lexicalClosures": {
+          "type": "boolean"
+        },
+        "fixedArity": {
+          "type": "boolean"
+        },
+        "firstClassValues": {
+          "type": "boolean"
+        }
+      }
+    },
+    "capabilityBuiltin": {
+      "type": "object",
+      "required": ["name", "arity"],
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "arity": {
+          "$ref": "#/$defs/nonNegativeInteger"
+        }
+      }
+    },
+    "capabilityLanguage": {
+      "type": "object",
+      "required": [
+        "values",
+        "truthModel",
+        "declarations",
+        "controlFlow",
+        "functions",
+        "keywords",
+        "builtins"
+      ],
+      "properties": {
+        "values": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "truthModel": {
+          "type": "string"
+        },
+        "declarations": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "controlFlow": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "functions": {
+          "$ref": "#/$defs/capabilityFunctions"
+        },
+        "keywords": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "builtins": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/capabilityBuiltin"
+          }
+        }
+      }
+    },
+    "capabilityDiagnostics": {
+      "type": "object",
+      "required": [
+        "structured",
+        "schema",
+        "fields",
+        "sourcePositions",
+        "columnEncoding"
+      ],
+      "properties": {
+        "structured": {
+          "type": "boolean"
+        },
+        "schema": {
+          "type": "string",
+          "minLength": 1
+        },
+        "fields": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "sourcePositions": {
+          "type": "string"
+        },
+        "columnEncoding": {
+          "type": "string"
+        }
+      }
+    },
+    "capabilityExecution": {
+      "type": "object",
+      "required": ["deterministic", "bounded", "historicalTrace"],
+      "properties": {
+        "deterministic": {
+          "type": "boolean"
+        },
+        "bounded": {
+          "type": "boolean"
+        },
+        "historicalTrace": {
+          "type": "boolean"
+        }
+      }
+    },
+    "capabilityCompiler": {
+      "type": "object",
+      "required": [
+        "pipeline",
+        "backend",
+        "artifacts",
+        "artifactSchemas",
+        "diagnostics",
+        "execution"
+      ],
+      "properties": {
+        "pipeline": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "backend": {
+          "type": "string"
+        },
+        "artifacts": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "artifactSchemas": {
+          "type": "object",
+          "required": [
+            "tokens",
+            "ast",
+            "analysis",
+            "assembly",
+            "instruction-addresses",
+            "timings",
+            "result",
+            "values",
+            "trace",
+            "diagnostic"
+          ],
+          "additionalProperties": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "diagnostics": {
+          "$ref": "#/$defs/capabilityDiagnostics"
+        },
+        "execution": {
+          "$ref": "#/$defs/capabilityExecution"
+        }
+      }
+    },
+    "capabilityCli": {
+      "type": "object",
+      "required": [
+        "schema",
+        "commands",
+        "input",
+        "sourceMetadataCharacterEncoding",
+        "output",
+        "protocolOutputLimitBytes",
+        "limitOverrides",
+        "stdinFilename",
+        "deterministicByDefault",
+        "timingsOptIn",
+        "exitCodes"
+      ],
+      "properties": {
+        "schema": {
+          "const": "forge.cli/v1"
+        },
+        "commands": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "input": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "sourceMetadataCharacterEncoding": {
+          "type": "string"
+        },
+        "output": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "protocolOutputLimitBytes": {
+          "$ref": "#/$defs/positiveInteger"
+        },
+        "limitOverrides": {
+          "type": "string"
+        },
+        "stdinFilename": {
+          "type": "boolean"
+        },
+        "deterministicByDefault": {
+          "type": "boolean"
+        },
+        "timingsOptIn": {
+          "type": "boolean"
+        },
+        "exitCodes": {
+          "type": "object",
+          "required": [
+            "success",
+            "diagnostic",
+            "usage",
+            "input",
+            "resource",
+            "internal"
+          ],
+          "additionalProperties": {
+            "$ref": "#/$defs/nonNegativeInteger"
+          }
+        }
+      }
+    },
+    "capabilityInterfaces": {
+      "type": "object",
+      "required": ["browserWorkbench", "cli"],
+      "properties": {
+        "browserWorkbench": {
+          "type": "boolean"
+        },
+        "cli": {
+          "$ref": "#/$defs/capabilityCli"
+        }
+      }
+    },
+    "capabilityVerification": {
+      "type": "object",
+      "required": [
+        "unitAndConformanceSuites",
+        "independentTreeWalkOracle",
+        "differentialTesting",
+        "mutationSensitivityGate"
+      ],
+      "properties": {
+        "unitAndConformanceSuites": {
+          "type": "boolean"
+        },
+        "independentTreeWalkOracle": {
+          "type": "boolean"
+        },
+        "differentialTesting": {
+          "type": "boolean"
+        },
+        "mutationSensitivityGate": {
+          "type": "boolean"
+        }
+      }
+    },
+    "capabilityManifest": {
+      "type": "object",
+      "required": [
+        "schema",
+        "identity",
+        "language",
+        "compiler",
+        "interfaces",
+        "verification",
+        "limits"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "schema": {
+          "const": "forge.capabilities/v1"
+        },
+        "identity": {
+          "$ref": "#/$defs/capabilityIdentity"
+        },
+        "language": {
+          "$ref": "#/$defs/capabilityLanguage"
+        },
+        "compiler": {
+          "$ref": "#/$defs/capabilityCompiler"
+        },
+        "interfaces": {
+          "$ref": "#/$defs/capabilityInterfaces"
+        },
+        "verification": {
+          "$ref": "#/$defs/capabilityVerification"
+        },
+        "limits": {
+          "type": "object",
+          "required": [
+            "maxSourceLength",
+            "maxTokens",
+            "maxParserNesting",
+            "maxInstructions",
+            "maxSteps",
+            "maxCallDepth",
+            "maxStackDepth",
+            "maxArrayLength",
+            "maxStringLength",
+            "maxOutputLines",
+            "maxOutputCharacters",
+            "maxTraceEntries",
+            "maxTraceStackItems",
+            "maxTraceCharacters",
+            "maxTraceValueCharacters",
+            "maxFormatDepth",
+            "maxFormatItems",
+            "maxFormatCharacters"
+          ],
+          "additionalProperties": {
+            "$ref": "#/$defs/nonNegativeInteger"
+          }
+        }
+      }
+    }
+  }
+}

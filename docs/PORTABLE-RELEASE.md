@@ -35,6 +35,9 @@ is preserved. Use HTTPS for any non-local deployment.
 The archive intentionally omits compiler source modules, tests, `package.json`,
 the lockfile, and development tooling. Commands such as `npm ci`, `npm test`,
 and `npm run dev` apply to a cloned source repository, not to this archive.
+The separately published `forge-compiler-cli-v*.tgz` contains the executable
+Node compiler core and automation schemas; it is not embedded in the static
+site archives.
 
 ## Browser and data model
 
@@ -58,6 +61,7 @@ Compare an archive's SHA-256 digest with its entry in the separately published
 
 ```bash
 sha256sum forge-compiler-v*.tar.gz
+sha256sum forge-compiler-cli-v*.tgz
 ```
 
 On PowerShell:

@@ -45,6 +45,7 @@ position when available.
 | `format.js`          | Cycle-aware display and concatenation value rendering           |
 | `ast.js`             | Human-readable AST rendering                                    |
 | `index.js`           | Stable public API and pipeline orchestration                    |
+| `capabilities.js`    | Truthful feature, schema, interface, and limit discovery        |
 | `compiler.worker.js` | Browser worker request boundary                                 |
 | `selfTest.js`        | Browser-visible compatibility verification                      |
 | `selfTestCases.js`   | Canonical self-test corpus consumed by `selfTest.js`            |
@@ -163,6 +164,52 @@ while compilation still uses the complete program. The active inspector follows
 the WAI-ARIA tab interaction model, diagnostics can focus their source
 position, and live status uses one atomic announcement region.
 
+## CLI and automation boundary
+
+`bin/forge.mjs` is a minimal executable wrapper over `src/cli/main.js`. It
+accepts UTF-8 files or stdin and invokes the same `compileSource` pipeline as
+the browser; it does not fork a second language implementation. Human `run`
+mode reserves stdout for program output. Machine mode emits exactly one
+`forge.cli/v1` JSON document to stdout on success or failure and never mixes
+program output into the protocol stream.
+
+The boundary separates internal objects from public projections:
+
+```text
+compileSource result
+       │
+       ▼
+explicit token / AST / analysis / assembly / result projections
+       │
+       ▼
+flat forge.values/v1 runtime graph + bounded protocol encoder
+       │
+       ├── human renderer
+       └── forge.cli/v1 JSON envelope
+```
+
+Every public projection identifies its own schema major. AST nodes include
+their one-based start position even though positions remain non-enumerable
+inside the parser. Assembly projections remove v13 `op`/`arg` compatibility
+aliases and expose canonical index, address, opcode, operand, and linked target
+fields. Runtime globals use a flat `forge.values/v1` node table. Each mutable
+array is emitted exactly once; roots and items use numeric array-reference IDs.
+This preserves cycles, aliases, hostile property names, and very deep graphs
+without recursively nested JSON. The complete encoded response has an
+independent 16 MiB ceiling and returns resource exit `4` if exceeded.
+
+Capability discovery is built from the live compiler version, keyword,
+builtin, schema, artifact, and default-limit constants. It intentionally
+excludes roadmap features. Machine responses omit timings unless requested by a
+timing flag or artifact, source contents, timestamps, random request IDs, and
+resolved host paths so identical input and options produce identical output
+across repeated runs.
+
+Exit codes permanently distinguish success, language diagnostics, invalid
+invocations, input failures, resource exhaustion, and internal defects. This
+service boundary is the intended common substrate for later SARIF, MCP, LSP,
+and debugger adapters; those adapters are not claimed as shipped capabilities.
+
 ## Verification and delivery
 
 Vitest exercises:
@@ -174,6 +221,8 @@ Vitest exercises:
 - 92 differential cases comparing VM output and cycle-safe final globals with
   an independent tree-walk execution backend;
 - accessible React interactions.
+- process-level CLI contracts, file/stdin equivalence, JSON determinism,
+  stdout/stderr separation, exit classes, and cyclic runtime values.
 
 The local quality gate checks formatting, environment-specific ESLint rules,
 local Markdown links, synchronized package/lock/compiler/language versions,

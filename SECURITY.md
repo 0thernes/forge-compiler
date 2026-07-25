@@ -47,3 +47,19 @@ in the browser's local storage for the deployed origin. FORGE does not upload
 those preferences, source, or program output, but anyone with access to the same
 browser profile can read the stored draft through the site. Avoid entering
 secrets and clear the site's stored data when using a shared device.
+
+## CLI data
+
+The CLI reads only the source file explicitly named by the caller, or standard
+input. FORGE programs still have no ambient filesystem, process, environment,
+or network access. JSON responses contain the caller-provided display name,
+source size, and SHA-256 digest, but not source contents or the resolved host
+path. Human operational labels and diagnostics escape terminal controls and
+bidirectional formatting characters. Human program output remains verbatim;
+redirect it or use JSON mode when running untrusted programs. Program output
+and final globals can still reproduce secrets deliberately embedded in a
+program, so treat saved protocol output as potentially sensitive.
+
+The CLI's language limits are availability controls, not a multi-tenant
+sandbox. Run untrusted jobs inside a separately constrained process or
+container with OS-level CPU, wall-clock, memory, and output limits.
