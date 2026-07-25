@@ -77,7 +77,7 @@ maintainable project:
 - immutable trace snapshots and retained final globals;
 - compilation in a Web Worker to keep the interface responsive;
 - versioned local draft persistence and stale-request protection;
-- 380+ automated tests, coverage thresholds, linting, formatting, production
+- 388 automated tests, coverage thresholds, linting, formatting, production
   builds, dependency updates, and GitHub Pages deployment.
 
 The original v13 import paths remain as compatibility adapters to one canonical
